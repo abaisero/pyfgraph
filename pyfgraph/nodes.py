@@ -106,15 +106,9 @@ class FFactor(Factor):
     def gradient(self):
         idx = tuple( v.value for v in self.variables )
         pr = self.graph.pr(self.vertex, with_l1_norm=False)
-        # print '==='
-        # print 'idx: ', idx
-        # print 'feats: ', self.feats
-        # print 'pr: ', pr
-        # return self.feats[idx] - np.tensordot(pr, self.feats)
+
         ttable = np.zeros(self.arity)
         ttable[idx] = 1
-        # print 'ttable:'
-        # print ttable
 
         logger.debug('%s.gradient():', self.name)
         logger.debug(' * ttable: %s', ttable)
@@ -125,5 +119,4 @@ class FFactor(Factor):
         g = np.zeros(Params.tot_nparams)
         g[self.pslice] = (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
         return g
-        # return (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
 

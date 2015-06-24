@@ -8,15 +8,15 @@ from pyfgraph.fgraph import FactorGraph
 if __name__ == '__main__':
     fg = FactorGraph()
 
-    V1 = fg.add(Variable, 'var_1', arity=2)
-    V2 = fg.add(Variable, 'var_2', arity=2)
-    V3 = fg.add(Variable, 'var_3', arity=2)
+    V1 = fg.add(Variable, 'V1', arity=2)
+    V2 = fg.add(Variable, 'V2', arity=2)
+    V3 = fg.add(Variable, 'V3', arity=2)
 
-    F1 = fg.add(Factor, 'f_1', V1          )
-    F2 = fg.add(Factor, 'f_2', (V1, V2)    )
-    F3 = fg.add(Factor, 'f_3', (V2, V3)    )
+    F1 = fg.add(Factor, 'F1', V1          )
+    F2 = fg.add(Factor, 'F2', (V1, V2)    )
+    F3 = fg.add(Factor, 'F3', (V2, V3)    )
 # TODO This factor requires loopy bp
-    # F4 = fg.add(Factor, 'f_4', (V1, V2, V3))
+    # F4 = fg.add(Factor, 'F4', (V1, V2, V3))
 
 # F1 prefers if V1 is 0
     F1.table = np.array([ 10, 1 ])
