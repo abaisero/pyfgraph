@@ -4,9 +4,10 @@ import numpy as np
 import numpy.random as rnd
 
 import pyfgraph
-from pyfgraph.params import Params
-from pyfgraph.nodes import Node, Variable, Factor, FeatFactor
 from pyfgraph.fgraph import FactorGraph
+from pyfgraph.params import Params
+from pyfgraph.nodes import Variable, Factor, FeatFactor
+from pyfgraph.algo import message_passing
 
 import os, logging
 
@@ -16,6 +17,7 @@ def log_setup():
 
     logging.basicConfig(
             filename=os.path.basename(__file__) + '.log',
+            filemode='w',
             format=fmt,
             level=logging.INFO)
 

@@ -3,9 +3,10 @@
 import numpy as np
 
 import pyfgraph
-from pyfgraph.params import Params
-from pyfgraph.nodes import Node, Variable, Factor, TabFactor, FeatFactor, FunFactor
 from pyfgraph.fgraph import FactorGraph
+from pyfgraph.nodes import Variable, Factor, TabFactor, FeatFactor, FunFactor
+from pyfgraph.params import Params
+from pyfgraph.algo import message_passing
 
 import os, logging
 
@@ -13,9 +14,9 @@ def log_setup():
     fmt = '%(asctime)s - %(levelname)s - %(message)s'
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-    print os.path.basename(__file__) + '.log'
     logging.basicConfig(
             filename=os.path.basename(__file__) + '.log',
+            filemode='w',
             format=fmt,
             level=logging.DEBUG)
 
@@ -67,7 +68,7 @@ if __name__ == '__main__':
 
     fg.make(done=True)
 
-    fg.message_passing()
+    message_passing(fg, 'sum-product', 'max-product')
 
     print ' === Message Checking === '
     fg.check_message_passing()

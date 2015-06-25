@@ -15,6 +15,7 @@ import numpy.linalg as la
 
 from params import Params
 from nodes import Node, Variable, Factor, FeatFactor, FunFactor
+from algo import message_passing
 
 import logging
 logger = logging.getLogger(__name__)
@@ -154,118 +155,105 @@ class FactorGraph(object):
         for v in self.variables:
             self.vp_node[v].value = None
 
-    def clear_msgs(self):
-        for e in self.graph.edges():
-            self.ep_sp_msg_fv[e] = None
-            self.ep_sp_msg_vf[e] = None
+    # def clear_msgs(self):
+    #     for e in self.graph.edges():
+    #         self.ep_sp_msg_fv[e] = None
+    #         self.ep_sp_msg_vf[e] = None
 
-            self.ep_sp_msg_fv_nc[e] = 0.
-            self.ep_sp_msg_vf_nc[e] = 0.
+    #         self.ep_sp_msg_fv_nc[e] = 0.
+    #         self.ep_sp_msg_vf_nc[e] = 0.
 
-            self.ep_mp_msg_fv[e] = None
-            self.ep_mp_msg_vf[e] = None
+    #         self.ep_mp_msg_fv[e] = None
+    #         self.ep_mp_msg_vf[e] = None
 
-            self.ep_mp_msg_fv_nc[e] = 0.
-            self.ep_mp_msg_vf_nc[e] = 0.
+    #         self.ep_mp_msg_fv_nc[e] = 0.
+    #         self.ep_mp_msg_vf_nc[e] = 0.
             
-            self.Z = None
-            self.logZ = None
+    #         self.Z = None
+    #         self.logZ = None
 
-    def pass_msgs(self, s, t):
-        snode = self.vp_node[s]
-        tnode = self.vp_node[t]
-        logger.debug('passing %s -> %s', snode, tnode)
+    # def pass_msgs(self, s, t):
+    #     snode = self.vp_node[s]
+    #     tnode = self.vp_node[t]
+    #     logger.debug('passing %s -> %s', snode, tnode)
 
-        s_vtype = self.vp_type[s]
-        if s_vtype == 'variable':
-            arity = self.vp_arity[s]
-            sp_msg, sp_msg_nc = np.ones(arity), 1
-            mp_msg, mp_msg_nc = np.ones(arity), 1
+    #     s_vtype = self.vp_type[s]
+    #     if s_vtype == 'variable':
+    #         arity = self.vp_arity[s]
+    #         sp_msg, sp_msg_nc = np.ones(arity), 1
+    #         mp_msg, mp_msg_nc = np.ones(arity), 1
 
-            logger.debug(' * sp_msg:    %s', sp_msg)
-            logger.debug(' * sp_msg_nc: %s', sp_msg_nc)
-            logger.debug(' * mp_msg:    %s', mp_msg)
-            logger.debug(' * mp_msg_nc: %s', mp_msg_nc)
-            neighbours = list(s.out_neighbours())
-            neighbours.remove(t)
-            for neigh in neighbours:
-                e = self.graph.edge(neigh, s)
-                sp_msg    *= self.ep_sp_msg_fv[e]
-                sp_msg_nc *= self.ep_sp_msg_fv_nc[e]
-                mp_msg    *= self.ep_mp_msg_fv[e]
-                mp_msg_nc *= self.ep_mp_msg_fv_nc[e]
-                logger.debug('   -------')
-                logger.debug(' * sp_msg:    %s', sp_msg)
-                logger.debug(' * sp_msg_nc: %s', sp_msg_nc)
-                logger.debug(' * mp_msg:    %s', mp_msg)
-                logger.debug(' * mp_msg_nc: %s', mp_msg_nc)
+    #         logger.debug(' * sp_msg:    %s', sp_msg)
+    #         logger.debug(' * sp_msg_nc: %s', sp_msg_nc)
+    #         logger.debug(' * mp_msg:    %s', mp_msg)
+    #         logger.debug(' * mp_msg_nc: %s', mp_msg_nc)
+    #         neighbours = list(s.out_neighbours())
+    #         neighbours.remove(t)
+    #         for neigh in neighbours:
+    #             e = self.graph.edge(neigh, s)
+    #             sp_msg    *= self.ep_sp_msg_fv[e]
+    #             sp_msg_nc *= self.ep_sp_msg_fv_nc[e]
+    #             mp_msg    *= self.ep_mp_msg_fv[e]
+    #             mp_msg_nc *= self.ep_mp_msg_fv_nc[e]
+    #             logger.debug('   -------')
+    #             logger.debug(' * sp_msg:    %s', sp_msg)
+    #             logger.debug(' * sp_msg_nc: %s', sp_msg_nc)
+    #             logger.debug(' * mp_msg:    %s', mp_msg)
+    #             logger.debug(' * mp_msg_nc: %s', mp_msg_nc)
 
-            e = self.graph.edge(s, t)
+    #         e = self.graph.edge(s, t)
 
-            sp_msg_nc *= sp_msg.sum()
-            self.ep_sp_msg_vf[e] = sp_msg/sp_msg.sum()
-            self.ep_sp_msg_vf_nc[e] = sp_msg_nc
+    #         sp_msg_nc *= sp_msg.sum()
+    #         self.ep_sp_msg_vf[e] = sp_msg/sp_msg.sum()
+    #         self.ep_sp_msg_vf_nc[e] = sp_msg_nc
 
-            mp_msg_nc *= mp_msg.sum()
-            self.ep_mp_msg_vf[e] = mp_msg/mp_msg.sum()
-            self.ep_mp_msg_vf_nc[e] = mp_msg_nc
-        elif s_vtype  == 'factor':
-            nname = self.vp_name[t]
-            msgs = { nname: np.ones(self.vp_arity[t]) }
-            msg_nc = 1
-            logger.debug(' * in_msg:    %s', msgs[nname])
-            logger.debug(' * in_msg_nc: %s', msg_nc)
+    #         mp_msg_nc *= mp_msg.sum()
+    #         self.ep_mp_msg_vf[e] = mp_msg/mp_msg.sum()
+    #         self.ep_mp_msg_vf_nc[e] = mp_msg_nc
+    #     elif s_vtype  == 'factor':
+    #         nname = self.vp_name[t]
+    #         msgs = { nname: np.ones(self.vp_arity[t]) }
+    #         msg_nc = 1
+    #         logger.debug(' * in_msg:    %s', msgs[nname])
+    #         logger.debug(' * in_msg_nc: %s', msg_nc)
 
-            neighbours = list(s.out_neighbours())
-            # neighbours.remove(t)
-            for neigh in filter(lambda neigh: neigh != t, neighbours):
-                nname = self.vp_name[neigh]
-                e = self.graph.edge(neigh, s)
-                msgs[nname] = self.ep_mp_msg_vf[e]
-                msg_nc *= self.ep_mp_msg_vf_nc[e]
-                logger.debug(' * in_msg:    %s', self.ep_mp_msg_vf[e])
-                logger.debug(' * in_msg_nc: %s', self.ep_mp_msg_vf_nc[e])
+    #         neighbours = list(s.out_neighbours())
+    #         # neighbours.remove(t)
+    #         for neigh in filter(lambda neigh: neigh != t, neighbours):
+    #             nname = self.vp_name[neigh]
+    #             e = self.graph.edge(neigh, s)
+    #             msgs[nname] = self.ep_mp_msg_vf[e]
+    #             msg_nc *= self.ep_mp_msg_vf_nc[e]
+    #             logger.debug(' * in_msg:    %s', self.ep_mp_msg_vf[e])
+    #             logger.debug(' * in_msg_nc: %s', self.ep_mp_msg_vf_nc[e])
 
-            msgs = [ msgs[n] for n in self.vp_table_inputs[s] ]
+    #         msgs = [ msgs[n] for n in self.vp_table_inputs[s] ]
 
-            logger.debug(' * factor: %s', self.vp_table[s])
+    #         logger.debug(' * factor: %s', self.vp_table[s])
 
-            prod = self.vp_table[s] * reduce(np.multiply, np.ix_(*msgs))
-            axis = self.vp_table_inputs[s].index(self.vp_name[t])
-            negaxis = tuple(filter(lambda a: a!= axis, range(len(neighbours))))
-            sp_msg = prod.sum(axis = negaxis)
-            mp_msg = prod.max(axis = negaxis)
+    #         prod = self.vp_table[s] * reduce(np.multiply, np.ix_(*msgs))
+    #         axis = self.vp_table_inputs[s].index(self.vp_name[t])
+    #         negaxis = tuple(filter(lambda a: a!= axis, range(len(neighbours))))
+    #         sp_msg = prod.sum(axis = negaxis)
+    #         mp_msg = prod.max(axis = negaxis)
 
-            e = self.graph.edge(s, t)
+    #         e = self.graph.edge(s, t)
 
-            sp_msg_sum = sp_msg.sum()
-            self.ep_sp_msg_fv_nc[e] = msg_nc * sp_msg_sum
-            self.ep_sp_msg_fv[e] = sp_msg/sp_msg_sum
+    #         sp_msg_sum = sp_msg.sum()
+    #         self.ep_sp_msg_fv_nc[e] = msg_nc * sp_msg_sum
+    #         self.ep_sp_msg_fv[e] = sp_msg/sp_msg_sum
 
-            mp_msg_sum = mp_msg.sum()
-            self.ep_mp_msg_fv_nc[e] = msg_nc * mp_msg_sum
-            self.ep_mp_msg_fv[e] = mp_msg/mp_msg_sum
+    #         mp_msg_sum = mp_msg.sum()
+    #         self.ep_mp_msg_fv_nc[e] = msg_nc * mp_msg_sum
+    #         self.ep_mp_msg_fv[e] = mp_msg/mp_msg_sum
 
-            logger.debug(' * out_msg_sp:    %s', self.ep_sp_msg_fv[e])
-            logger.debug(' * out_msg_sp_nc: %s', self.ep_sp_msg_fv_nc[e])
+    #         logger.debug(' * out_msg_sp:    %s', self.ep_sp_msg_fv[e])
+    #         logger.debug(' * out_msg_sp_nc: %s', self.ep_sp_msg_fv_nc[e])
 
-            logger.debug(' * out_msg_mp:    %s', self.ep_mp_msg_fv[e])
-            logger.debug(' * out_msg_mp_nc: %s', self.ep_mp_msg_fv_nc[e])
-        else:
-            raise Exception('variable type error: {}'.format(s_vtype))
-
-    def traverse(self, root):
-        boundary = [ root ]
-        seen = []
-        edges = []
-        while boundary:
-            node = boundary.pop()
-            for neigh in node.out_neighbours():
-                if neigh not in seen:
-                    edges.append(self.graph.edge(node, neigh))
-                    boundary.append(neigh)
-            seen.append(node)
-        return seen, edges
+    #         logger.debug(' * out_msg_mp:    %s', self.ep_mp_msg_fv[e])
+    #         logger.debug(' * out_msg_mp_nc: %s', self.ep_mp_msg_fv_nc[e])
+    #     else:
+    #         raise Exception('variable type error: {}'.format(s_vtype))
 
     def print_marginals(self, v):
         print 'Marginal Probabilities Variables'
@@ -273,31 +261,31 @@ class FactorGraph(object):
         print 'variable: {}'.format(self.vp_name[v])
         print 'pr: {}'.format(self.pr(v, with_l1_norm=True))
 
-    def init_message_passing(self):
-        for f in self.factors:
-            self.vp_table[f] = self.vp_node[f].table
+    # def init_message_passing(self):
+    #     for f in self.factors:
+    #         self.vp_table[f] = self.vp_node[f].table
 
-    def message_passing(self):
-        self.init_message_passing()
+    # def message_passing(self):
+    #     self.init_message_passing()
 
-        root = list(self.graph.vertices())[0]
-        _, edges = self.traverse(root)
+    #     root = list(self.graph.vertices())[0]
+    #     _, edges = self.traverse(root)
 
-        self.clear_msgs()
-        for e in reversed(edges):
-            self.pass_msgs(e.target(), e.source())
-        for e in edges:
-            self.pass_msgs(e.source(), e.target())
+    #     self.clear_msgs()
+    #     for e in reversed(edges):
+    #         self.pass_msgs(e.target(), e.source())
+    #     for e in edges:
+    #         self.pass_msgs(e.source(), e.target())
 
-        logger.debug('Message Passing Done.')
+    #     logger.debug('Message Passing Done.')
 
-# computing partition function for this specific instance of message passing
-        pr, self.Z = self.pr(self.variables[0], with_l1_norm=True)
-        # self.Z = pr.sum()
-        self.logZ = np.log(self.Z)
+# # computing partition function for this specific instance of message passing
+    #     _, self.Z = self.pr(self.variables[0], with_l1_norm=True)
+    #     # self.Z = pr.sum()
+    #     self.logZ = np.log(self.Z)
 
-        logger.debug('Z: %s', self.Z)
-        logger.debug('logZ: %s', self.logZ)
+    #     logger.debug('Z: %s', self.Z)
+    #     logger.debug('logZ: %s', self.logZ)
 
     def check_message_passing(self):
         print 'Checking the message passing. For each variable, all the rows should be the same.'
@@ -386,8 +374,9 @@ class FactorGraph(object):
             for f in self.factors:
                 self.vp_node[f].make(phi=x, y_kw=None)
 
-            self.clear_msgs()
-            self.message_passing()
+            # self.clear_msgs()
+            message_passing(self, 'max-product')
+            # self.message_passing()
 
             vit.append(self.argmax())
 
@@ -418,8 +407,9 @@ class FactorGraph(object):
             for f in self.factors:
                 self.vp_node[f].make(phi=x, y_kw=y_kw)
 
-            self.clear_msgs()
-            self.message_passing()
+            # self.clear_msgs()
+            # self.message_passing()
+            message_passing(self, 'sum-product')
 
             nll[i] = self.nll()
         logger.debug('NLL DONE: %s', nll.shape)
@@ -449,8 +439,9 @@ class FactorGraph(object):
             for f in self.factors:
                 self.vp_node[f].make(phi=x, y_kw=y_kw)
 
-            self.clear_msgs()
-            self.message_passing()
+            # self.clear_msgs()
+            # self.message_passing()
+            message_passing(self, 'sum-product')
 
             dnll[i] = self.dnll()
         logger.debug('DNLL DONE: %s', dnll.shape)
