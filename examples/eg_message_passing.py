@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import numpy as np
 
 import pyfgraph
@@ -5,7 +7,27 @@ from pyfgraph.params import Params
 from pyfgraph.nodes import Node, Variable, Factor, FFactor
 from pyfgraph.fgraph import FactorGraph
 
+import logging
+
+def log_setup():
+    fmt = '%(asctime)s - %(levelname)s - %(message)s'
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    logging.basicConfig(
+            filename='eg_message_passing.log',
+            format=fmt,
+            level=logging.DEBUG)
+
+    logger = logging.getLogger()
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
 if __name__ == '__main__':
+    log_setup()
+
     fg = FactorGraph()
 
     V1 = fg.add(Variable, 'V1', arity=2)

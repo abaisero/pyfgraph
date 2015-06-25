@@ -12,11 +12,12 @@ import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
 
-import logging, log
-logger = logging.getLogger()
-
 from params import Params
 from nodes import Node, Variable, Factor, FFactor
+
+import logging
+logger = logging.getLogger(__name__)
+print __name__
 
 class FactorGraph(object):
     def __init__(self):
@@ -486,4 +487,3 @@ class FactorGraph(object):
         # if not res.success:
         #     raise Exception('Failed to train!')
         self.setParams(res.x)
-

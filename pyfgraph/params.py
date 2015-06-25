@@ -1,3 +1,7 @@
+import logging
+logger = logging.getLogger(__name__)
+print __name__
+
 # NB: this does not in itself contain the parameters. It just represents the shared parameters
 # Q: where is the actual parameter array? in the fg.
 class Params(object):

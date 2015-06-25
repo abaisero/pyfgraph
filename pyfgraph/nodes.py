@@ -1,10 +1,11 @@
 import numpy as np
 import numpy.random as rnd
 
-import logging, log
-logger = logging.getLogger()
-
 from params import Params
+
+import logging
+logger = logging.getLogger(__name__)
+print __name__
 
 class Node(object):
     def __init__(self, vertex, name):
