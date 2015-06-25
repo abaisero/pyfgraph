@@ -5,7 +5,7 @@ import numpy.random as rnd
 
 import pyfgraph
 from pyfgraph.params import Params
-from pyfgraph.nodes import Node, Variable, Factor, FeatFactor
+from pyfgraph.nodes import Node, Variable, Factor, FunFactor
 from pyfgraph.fgraph import FactorGraph
 
 import os, logging
@@ -35,40 +35,20 @@ def example_indep_params():
     V2 = fg.add(Variable, 'V2', arity=2)
     V3 = fg.add(Variable, 'V3', arity=2)
 
-    P1 = Params(n=4)
-    P2 = Params(n=4)
-    P3 = Params(n=4)
-    P_ = Params(n=16)
+    P1 = Params(n=2)
+    P2 = Params(n=2)
+    P3 = Params(n=2)
+    P_ = Params(n=2)
 
-    F1 = fg.add(FeatFactor, 'F1', V1,           P1)
-    F2 = fg.add(FeatFactor, 'F2', V2,           P2)
-    F3 = fg.add(FeatFactor, 'F3', V3,           P3)
-    F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), P_)
+    F1 = fg.add(FunFactor, 'F1', V1,           P1)
+    F2 = fg.add(FunFactor, 'F2', V2,           P2)
+    F3 = fg.add(FunFactor, 'F3', V3,           P3)
+    F_ = fg.add(FunFactor, 'F_', (V1, V2, V3), P_)
 
-    fg.make(done=True)
-    return fg
-
-def example_dep_params():
-    fg = FactorGraph()
-
-    V1 = fg.add(Variable, 'V1', arity=2)
-    V2 = fg.add(Variable, 'V2', arity=2)
-    V3 = fg.add(Variable, 'V3', arity=2)
-
-    PV = Params(n=4)
-    P_ = Params(n=16)
-
-    # Feat = Feats(n=2)
-
-# Factors 1, 2 and 3 share the same parameters
-    # F1 = fg.add(FeatFactor, 'F1', V1,           PV, Feat)
-    # F2 = fg.add(FeatFactor, 'F2', V2,           PV, Feat)
-    # F3 = fg.add(FeatFactor, 'F3', V3,           PV, Feat)
-    # F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), P_, Feat)
-    F1 = fg.add(FeatFactor, 'F1', V1,           PV)
-    F2 = fg.add(FeatFactor, 'F2', V2,           PV)
-    F3 = fg.add(FeatFactor, 'F3', V3,           PV)
-    F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), P_)
+    F1.set(lambda phi, V1: V1 * phi)
+    F2.set(lambda phi, V2: V2 * phi)
+    F3.set(lambda phi, V3: V3 * phi)
+    F_.set(lambda phi, V1, V2, V3: (V1+V2+V3) * phi)
 
     fg.make(done=True)
     return fg
@@ -84,12 +64,9 @@ def make_data(n):
 if __name__ == '__main__':
     rnd.seed(1)
 
-# Notice that, given the same training and testing data, the model with
-# independent parameters achieves better performance.
-    # fg = example_indep_params()
-    fg = example_dep_params()
+    fg = example_indep_params()
 
-    data = make_data(10)
+    data = make_data(100)
     print 'Training begin.'
     fg.train(data)
     print 'Training done.'
@@ -100,7 +77,7 @@ if __name__ == '__main__':
     for x, y, v, l in zip(data['X'], data['Y'], vit, nll):
         print x, y, v, l
 
-    data = make_data(10)
+    data = make_data(100)
     print 'Results (on test data):'
     nll = fg.nll(data=data)
     vit = fg.viterbi(data=data)

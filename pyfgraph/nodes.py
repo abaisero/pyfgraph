@@ -2,10 +2,11 @@ import numpy as np
 import numpy.random as rnd
 
 from params import Params
+from decorators import kwargsdec
+from iterators import proditer
 
 import logging
 logger = logging.getLogger(__name__)
-print __name__
 
 class Node(object):
     def __init__(self, vertex, name):
@@ -19,90 +20,71 @@ class Variable(Node):
     def __init__(self, vertex, name, arity):
         super(Variable, self).__init__(vertex, name)
         self.arity = arity
+        self.domain = np.arange(arity)
         self.value = None
 
 class Factor(Node):
-    def __init__(self, vertex, name, variables, params=None):
+    def __init__(self, vertex, name, variables, params=None, feats=None):
         super(Factor, self).__init__(vertex, name)
         self.variables = variables if isinstance(variables, tuple) else (variables,)
+        self.nvariables = len(self.variables)
         self.arity = tuple( v.arity for v in self.variables )
-        self.table = np.empty(self.arity)
-        self.params = params
+        self.table = None
 
-    def setTable(self, table):
+    def value(self, idx = None):
+        if self.table is None:
+            raise Exception
+        if idx is None:
+            idx = tuple( v.value for v in self.variables )
+        return self.table[idx]
+
+    def set(self, *args, **kwargs):
+        logger.error('Factor.set() is an interface and is not implemented yet.')
+        raise NotImplementedError
+
+    def make(self, phi = None, y_kw = None):
+        logger.error('Factor.make() is an interface and is not implemented yet.')
+        raise NotImplementedError
+
+    def gradient(self):
+        logger.error('Factor.gradent() is an interface and is not implemented yet.')
+        raise NotImplementedError
+
+class TabFactor(Factor):
+    def __init__(self, *args, **kwargs):
+        super(TabFactor, self).__init__(*args, **kwargs)
+
+    def set(self, table):
         if isinstance(table, (int ,long, float)):
             self.table.fill(table)
+        elif isinstance(table, list):
+            self.table = np.array(table)
         elif isinstance(table, np.ndarray):
             self.table = table
         else:
             NotImplementedError('setTable failed with type(table) = {}'.format(type(table)))
 
-    def value(self, idx = None):
-        if idx is None:
-            idx = tuple( v.value for v in self.variables )
-        return self.table[idx]
+    def make(self, phi = None, y_kw = None):
+        pass
 
-    def gradient(self):
-        raise NotImplementedError
-
-class FFactor(Factor):
-    def __init__(self, *args, **kwargs):
-        super(FFactor, self).__init__(*args, **kwargs)
+class FeatFactor(Factor):
+    def __init__(self, vertex, name, variables, params = None, feats = None):
+        super(FeatFactor, self).__init__(vertex, name, variables)
         self.nfeats = 0
         self.feats = None
-        # self.params = None
-        # self.nparams = 0
         self.pshape = self.arity + (-1,)
 
-        # self.params = kwargs['params']
+        self.params = params
+        # self.feats = feats
 
-    # def gradient(self, X):
-    #     print 'computing gradient'
+    def make(self, phi, y_kw = None):
+# set/make features
+        self.feats = phi
+        self.nfeats = len(self.feats)
 
-    def setFeats(self, feats):
-        # print 'feats: {}'.format(feats)
-        self.feats = feats
-        self.nfeats = len(feats)
-
-    # def getParams(self):
-    #     return self.params.ravel()
-
-    # def setParams(self, params, nfeats = None):
-    #     if isinstance(params, np.ndarray):
-    #         self.params = params.reshape(self.pshape)
-    #     elif params == 'random':
-    #         self.params = rnd.randn(*tuple(self.arity + (self.nfeats,)))
-    #     else:
-    #         raise NotImplementedError('setParams with {} not done yet').format(params)
-    #     self.nparams = self.params.size
-
-    def getParams(self):
-        return self.params
-
-    def setParams(self, params, nfeats = None):
-        if isinstance(params, np.ndarray):
-            print 'setParams: {}'.format(params)
-            self.params[:] = params.ravel()
-        elif params == 'random':
-            self.params[:] = .1 * rnd.randn(self.params.size)
-        else:
-            raise NotImplementedError('setParams with {} not done yet').format(params)
-        self.nparams = self.params.size
-
-    def makeTable(self):
-# TODO this is the value which the table will take for specific values
-        # idx = tuple( v.value for v in self.variables )
-        # return np.dot(self.feats, self.params[idx])
-
-        if self.params is None:
-            self.setParams('random')
+# set/make table
         self.nl_table = np.dot(self.params_tab, self.feats)
         self.table = np.exp(-self.nl_table)
-
-        # for items in itertools.product(*[ range(v.arity) for v in self.variables ]):
-        #     print items
-        # self.table = 
-        # self.phi = np.array([ v.value ])
 
     def gradient(self):
         idx = tuple( v.value for v in self.variables )
@@ -118,6 +100,36 @@ class FFactor(Factor):
         logger.debug(' * second: %s', np.kron(pr, self.feats))
 
         g = np.zeros(Params.tot_nparams)
-        g[self.pslice] = (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
+        # g[self.pslice] = (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
+        g[self.pslice] = np.kron(ttable-pr, self.feats).ravel()
+        return g
+
+class FunFactor(Factor):
+    def __init__(self, vertex, name, variables, params = None):
+        super(FunFactor, self).__init__(vertex, name, variables)
+        self.params = params
+        self.fun = None
+        self.pshape = self.arity + (-1,)
+
+    def set(self, fun):
+        self.fun = kwargsdec(fun)
+
+    def make(self, phi, y_kw = None):
+# make/set features
+        iterators = { v.name: v.domain for v in self.variables }
+        self.feats = np.array([ self.fun(phi=phi, **prodict) for prodict in proditer(**iterators) ])
+        self.feats.shape = self.arity + (-1,)
+        self.nfeats = self.feats.shape[-1]
+
+# make/set table
+        self.nl_table = np.dot(self.feats, self.params)
+        self.table = np.exp(-self.nl_table)
+        
+    def gradient(self):
+        idx = tuple( v.value for v in self.variables)
+        pr = self.graph.pr(self.vertex, with_l1_norm=False)
+
+        g = np.zeros(Params.tot_nparams)
+        g[self.pslice] = self.feats[idx] - np.tensordot(pr, self.feats, self.nvariables)
         return g
 

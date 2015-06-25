@@ -1,3 +1,5 @@
+import inspect
+
 import sys, warnings
 warnings.filterwarnings('error')
 
@@ -5,19 +7,17 @@ from graph_tool.all import *
 from graph_tool.util import find_vertex
 
 import scipy.optimize as opt
-
-import itertools
+import itertools as itt
 
 import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
 
 from params import Params
-from nodes import Node, Variable, Factor, FFactor
+from nodes import Node, Variable, Factor, FeatFactor, FunFactor
 
 import logging
 logger = logging.getLogger(__name__)
-print __name__
 
 class FactorGraph(object):
     def __init__(self):
@@ -100,11 +100,15 @@ class FactorGraph(object):
 
             for f in self.factors:
                 node = self.vp_node[f]
-                if isinstance(node, FFactor):
+# TODO clean this up; put somewhere else
+                if isinstance(node, FeatFactor):
                     node.pslice = node.params.pslice
                     node.params = self.params[node.pslice]
                     node.params_tab = node.params.view()
                     node.params_tab.shape = node.pshape
+                if isinstance(node, FunFactor):
+                    node.pslice = node.params.pslice
+                    node.params = self.params[node.pslice]
 
 # Just testing that all the views are set correctly
             # self.params[:] = 10
@@ -358,21 +362,16 @@ class FactorGraph(object):
 # TODO revolutionize this. No need to keep on concatenating stuff and so on.....
 
     def getParams(self):
-        # return np.concatenate(tuple( self.vp_node[f].getParams() for f in self.factors ))
         return self.params
 
     def setParams(self, params):
-        self.params[:] = params
-        # pdims = np.array([ self.vp_node[f].nfeats * np.prod(self.vp_node[f].arity) for f in self.factors ])
-        # params = nptk.split_as(params, pdims)
-        # for f, p in zip(self.factors, params):
-        #     self.vp_node[f].setParams(p)
-
-# TODO this is supposedly, if the features are different for each factor
-        # pdims = np.array([ self.vp_node[f].pdim for f in self.factors ])
-        # params = split_as(params, pdims)
-        # for f, p in zip(self.factors, params):
-        #     self.vp_node[f].setParams(p)
+        if isinstance(params, np.ndarray):
+            self.params[:] = params.ravel()
+        elif params == 'random':
+            self.params[:] = .1 * rnd.randn(self.params.size)
+        else:
+            raise NotImplementedError('setParams with {} not done yet').format(params)
+        self.nparams = self.params.size
 
     def l(self):
         return np.prod([ self.vp_node[f].value() for f in self.factors ])
@@ -385,8 +384,7 @@ class FactorGraph(object):
         for x in data['X']:
             self.clear_values()
             for f in self.factors:
-                self.vp_node[f].setFeats(x)
-                self.vp_node[f].makeTable()
+                self.vp_node[f].make(phi=x, y_kw=None)
 
             self.clear_msgs()
             self.message_passing()
@@ -413,24 +411,23 @@ class FactorGraph(object):
         ndata = X.shape[0]
 
         nll = np.empty(ndata)
-        for i, (x, y, y_kwlist) in enumerate(zip(X, Y, Y_kwlist)):
-            self.set_values(clear=True, **y_kwlist)
+        logger.debug('Allocating nll array with shape %s', nll.shape)
+        for i, x, y, y_kw in itt.izip(itt.count(), X, Y, Y_kwlist):
+            self.set_values(clear=True, **y_kw)
 
             for f in self.factors:
-                self.vp_node[f].setFeats(x)
-                self.vp_node[f].makeTable()
+                self.vp_node[f].make(phi=x, y_kw=y_kw)
 
             self.clear_msgs()
             self.message_passing()
 
             nll[i] = self.nll()
-        logger.debug('NLL DONE: %s'.format(nll.shape))
+        logger.debug('NLL DONE: %s', nll.shape)
         return nll
 
     def dnll(self, data = None, params = None):
         if data is None:
 # Assume data is already set, 
-            # return np.concatenate(tuple(self.vp_node[f].gradient().ravel() for f in self.factors))
             return np.array([ self.vp_node[f].gradient() for f in self.factors ]).sum(axis=0)
 
         logger.debug('Computing DNLL')
@@ -446,18 +443,17 @@ class FactorGraph(object):
 
         dnll = np.empty((ndata, self.nparams))
         logger.debug('Allocating dnll array with shape %s', dnll.shape)
-        for i, (x, y, y_kwlist) in enumerate(zip(X, Y, Y_kwlist)):
-            self.set_values(clear=True, **y_kwlist)
+        for i, x, y, y_kw in itt.izip(itt.count(), X, Y, Y_kwlist):
+            self.set_values(clear=True, **y_kw)
 
             for f in self.factors:
-                self.vp_node[f].setFeats(x)
-                self.vp_node[f].makeTable()
+                self.vp_node[f].make(phi=x, y_kw=y_kw)
 
             self.clear_msgs()
             self.message_passing()
 
             dnll[i] = self.dnll()
-        logger.debug('DNLL DONE: {}'.format(dnll.shape))
+        logger.debug('DNLL DONE: %s', dnll.shape)
 
         return dnll
 
@@ -468,8 +464,7 @@ class FactorGraph(object):
 
     def train(self, data):
         self.initFactorDims(data)
-        for f in self.factors:
-            self.vp_node[f].setParams('random')
+        self.setParams('random')
 
         def fun(params):
             cost = self.nll(data = data, params = params).sum() 
@@ -491,7 +486,6 @@ class FactorGraph(object):
             fun      = fun,
             x0       = self.getParams(),
             jac      = jac,
-            # callback = lambda params: logger.info(' * params: %s', params)
         )
         logger.info('END   Optimization')
         logger.info('Training result: {}'.format(res))
