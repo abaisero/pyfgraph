@@ -2,8 +2,8 @@ import numpy as np
 import numpy.random as rnd
 
 from params import Params
-from decorators import kwargsdec
-from iterators import proditer
+from utils.decorators import kwargsdec
+from utils.iterators import proditer
 
 import logging
 logger = logging.getLogger(__name__)

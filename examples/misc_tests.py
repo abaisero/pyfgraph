@@ -1,7 +1,9 @@
+#! /usr/bin/python
+
 import numpy as np
 
-from pyfgraph.decorators import kwargsdec
-from pyfgraph.decorators import proditer
+from pyfgraph.utils.decorators import kwargsdec
+from pyfgraph.utils.iterators import proditer
 
 def decorator():
     def f(a, b):
