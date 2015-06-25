@@ -135,7 +135,9 @@ class FactorGraph(object):
             vertex_size=self.vp_size
         )
 
-    def set_values(self, **kwargs):
+    def set_values(self, clear=False, **kwargs):
+        if clear:
+            self.clear_values()
         for key, value in kwargs.iteritems():
             vertices = find_vertex(self.graph, self.vp_name, key)
             if len(vertices) == 1:
@@ -380,10 +382,10 @@ class FactorGraph(object):
             self.setParams(params)
 
         vit = []
-        for d in data:
+        for x in data['X']:
             self.clear_values()
             for f in self.factors:
-                self.vp_node[f].setFeats(d['phi_'])
+                self.vp_node[f].setFeats(x)
                 self.vp_node[f].makeTable()
 
             self.clear_msgs()
@@ -405,13 +407,17 @@ class FactorGraph(object):
         if params is not None:
             self.setParams(params)
 
-        nll = np.empty(len(data))
-        for i, d in enumerate(data):
-            self.clear_values()
-            self.set_values(**d)
+        X, Y = data['X'], data['Y']
+        Y_kwlist = data['Y_kwlist']
+        
+        ndata = X.shape[0]
+
+        nll = np.empty(ndata)
+        for i, (x, y, y_kwlist) in enumerate(zip(X, Y, Y_kwlist)):
+            self.set_values(clear=True, **y_kwlist)
 
             for f in self.factors:
-                self.vp_node[f].setFeats(d['phi_'])
+                self.vp_node[f].setFeats(x)
                 self.vp_node[f].makeTable()
 
             self.clear_msgs()
@@ -432,14 +438,19 @@ class FactorGraph(object):
         if params is not None:
             self.setParams(params)
 
-        dnll = np.empty((len(data), self.nparams))
+
+        X, Y = data['X'], data['Y']
+        Y_kwlist = data['Y_kwlist']
+        
+        ndata = X.shape[0]
+
+        dnll = np.empty((ndata, self.nparams))
         logger.debug('Allocating dnll array with shape %s', dnll.shape)
-        for i, d in enumerate(data):
-            self.clear_values()
-            self.set_values(**d)
+        for i, (x, y, y_kwlist) in enumerate(zip(X, Y, Y_kwlist)):
+            self.set_values(clear=True, **y_kwlist)
 
             for f in self.factors:
-                self.vp_node[f].setFeats(d['phi_'])
+                self.vp_node[f].setFeats(x)
                 self.vp_node[f].makeTable()
 
             self.clear_msgs()
@@ -450,13 +461,13 @@ class FactorGraph(object):
 
         return dnll
 
-    def initFactorDims(self, d):
-        nfeats = d['phi_'].size
+    def initFactorDims(self, data):
+        nfeats = data['X'].shape[1]
         for f in self.factors:
             self.vp_node[f].nfeats = nfeats
 
     def train(self, data):
-        self.initFactorDims(data[0])
+        self.initFactorDims(data)
         for f in self.factors:
             self.vp_node[f].setParams('random')
 
