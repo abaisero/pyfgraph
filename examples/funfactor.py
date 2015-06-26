@@ -16,10 +16,11 @@ def log_setup():
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
     logging.basicConfig(
-            filename=os.path.basename(__file__) + '.log',
-            filemode='w',
-            format=fmt,
-            level=logging.INFO)
+        filename=os.path.basename(__file__) + '.log',
+        filemode='w',
+        format=fmt,
+        level=logging.INFO
+    )
 
     logger = logging.getLogger()
 
