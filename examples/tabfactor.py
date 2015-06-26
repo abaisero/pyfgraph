@@ -5,7 +5,6 @@ import numpy as np
 import pyfgraph
 from pyfgraph.fgraph import FactorGraph
 from pyfgraph.nodes import Variable, Factor, TabFactor, FeatFactor, FunFactor
-from pyfgraph.params import Params
 from pyfgraph.algo import message_passing
 
 import os, logging

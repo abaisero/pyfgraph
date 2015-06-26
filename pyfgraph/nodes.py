@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as rnd
 
-from params import Params
+# from params import Params
 from utils.decorators import kwargsdec
 from utils.iterators import proditer
 
@@ -24,7 +24,7 @@ class Variable(Node):
         self.value = None
 
 class Factor(Node):
-    def __init__(self, vertex, name, variables, params=None, feats=None):
+    def __init__(self, vertex, name, variables):
         super(Factor, self).__init__(vertex, name)
         self.variables = variables if isinstance(variables, tuple) else (variables,)
         self.nvariables = len(self.variables)
@@ -42,8 +42,8 @@ class Factor(Node):
         logger.error('Factor.set() is an interface and is not implemented yet.')
         raise NotImplementedError
 
-    def make(self, phi = None, y_kw = None):
-        logger.error('Factor.make() is an interface and is not implemented yet.')
+    def make_table(self, phi = None, y_kw = None):
+        logger.error('Factor.make_table() is an interface and is not implemented yet.')
         raise NotImplementedError
 
     def gradient(self):
@@ -64,23 +64,48 @@ class TabFactor(Factor):
         else:
             NotImplementedError('setTable failed with type(table) = {}'.format(type(table)))
 
-    def make(self, phi = None, y_kw = None):
+    def make_table(self, phi = None, y_kw = None):
         pass
 
-class FeatFactor(Factor):
-    def __init__(self, vertex, name, variables, params = None, feats = None):
-        super(FeatFactor, self).__init__(vertex, name, variables)
-        self.nfeats = 0
-        self.feats = None
+class ParamFactor(Factor):
+    pslices = {}
+    nparams = 0
+    def __init__(self, vertex, name, variables):
+        super(ParamFactor, self).__init__(vertex, name, variables)
         self.pshape = self.arity + (-1,)
+        self.pslice = None
 
-        self.params = params
-        # self.feats = feats
+    def set_pslice(self):
+        if self.pid is None or self.pid not in ParamFactor.pslices:
+            self.pslice = slice(ParamFactor.nparams, ParamFactor.nparams+self.nparams)
+            ParamFactor.nparams += self.nparams
+        else:
+            self.pslice = ParamFactor.pslices[self.pid]
 
-    def make(self, phi, y_kw = None):
+        if self.pid is not None and self.pid not in ParamFactor.pslices:
+            ParamFactor.pslices[self.pid] = self.pslice
+
+from operator import mul
+
+class FeatFactor(ParamFactor):
+    def __init__(self, vertex, name, variables, nfeats, pid = None):
+        super(FeatFactor, self).__init__(vertex, name, variables)
+
+        self.nfeats = nfeats
+        self.nparams = reduce(mul, self.arity) * nfeats
+        self.pid = pid
+        self.set_pslice()
+
+    def make_params(self, params):
+        self.params = params[self.pslice]
+        self.params_tab = self.params.view()
+        self.params_tab.shape = self.pshape
+
+    def make_table(self, phi, y_kw = None):
 # set/make features
         self.feats = phi
-        self.nfeats = len(self.feats)
+# unnecessary. But I could use it to check stuff
+        # self.nfeats = len(self.feats)
 
 # set/make table
         self.nl_table = np.dot(self.params_tab, self.feats)
@@ -99,26 +124,34 @@ class FeatFactor(Factor):
         logger.debug(' * first:  %s', np.kron(ttable, self.feats))
         logger.debug(' * second: %s', np.kron(pr, self.feats))
 
-        g = np.zeros(Params.tot_nparams)
+        g = np.zeros(ParamFactor.nparams)
         # g[self.pslice] = (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
         g[self.pslice] = np.kron(ttable-pr, self.feats).ravel()
         return g
 
-class FunFactor(Factor):
-    def __init__(self, vertex, name, variables, params = None):
+class FunFactor(ParamFactor):
+    def __init__(self, vertex, name, variables, nfeats, pid = None):
         super(FunFactor, self).__init__(vertex, name, variables)
-        self.params = params
+
+        self.nfeats = nfeats
+        self.nparams = nfeats
+        self.pid = pid
+        self.set_pslice()
+
         self.fun = None
-        self.pshape = self.arity + (-1,)
 
     def set(self, fun):
         self.fun = kwargsdec(fun)
 
-    def make(self, phi, y_kw = None):
+    def make_params(self, params):
+        self.params = params[self.pslice]
+
+    def make_table(self, phi, y_kw = None):
 # make/set features
         iterators = { v.name: v.domain for v in self.variables }
         self.feats = np.array([ self.fun(phi=phi, **prodict) for prodict in proditer(**iterators) ])
         self.feats.shape = self.arity + (-1,)
+# TODO unnecessary?
         self.nfeats = self.feats.shape[-1]
 
 # make/set table
@@ -129,7 +162,7 @@ class FunFactor(Factor):
         idx = tuple( v.value for v in self.variables)
         pr = self.graph.pr(self.vertex, with_l1_norm=False)
 
-        g = np.zeros(Params.tot_nparams)
+        g = np.zeros(ParamFactor.nparams)
         g[self.pslice] = self.feats[idx] - np.tensordot(pr, self.feats, self.nvariables)
         return g
 

@@ -13,8 +13,8 @@ import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
 
-from params import Params
-from nodes import Node, Variable, Factor, FeatFactor, FunFactor
+# from params import Params
+from nodes import Node, Variable, Factor, ParamFactor, FeatFactor, FunFactor
 from algo import message_passing
 
 import logging
@@ -92,39 +92,11 @@ class FactorGraph(object):
 
     def make(self, done=False):
         if done:
-            self.nparams = Params.tot_nparams
+            self.nparams = ParamFactor.nparams
             self.params = np.empty(self.nparams)
-            # i = 0
-            # for p in pset:
-            #     p.pslice = slice(i, i+p.n)
-            #     i += p.n
 
             for f in self.factors:
-                node = self.vp_node[f]
-# TODO clean this up; put somewhere else
-                if isinstance(node, FeatFactor):
-                    node.pslice = node.params.pslice
-                    node.params = self.params[node.pslice]
-                    node.params_tab = node.params.view()
-                    node.params_tab.shape = node.pshape
-                if isinstance(node, FunFactor):
-                    node.pslice = node.params.pslice
-                    node.params = self.params[node.pslice]
-
-# Just testing that all the views are set correctly
-            # self.params[:] = 10
-            # for f in self.factors:
-            #     node = self.vp_node[f]
-            #     print 'node: {}'.format(node)
-            #     print ' * pslice: {}'.format(node.pslice)
-            #     print ' * params: {}'.format(node.params)
-
-            # self.params[:] = np.arange(self.params.size)
-            # for f in self.factors:
-            #     node = self.vp_node[f]
-            #     print 'node: {}'.format(node)
-            #     print ' * pslice: {}'.format(node.pslice)
-            #     print ' * params: {}'.format(node.params)
+                self.vp_node[f].make_params(self.params)
         else:
             pass
 # TODO set other variables
@@ -372,7 +344,7 @@ class FactorGraph(object):
         for x in data['X']:
             self.clear_values()
             for f in self.factors:
-                self.vp_node[f].make(phi=x, y_kw=None)
+                self.vp_node[f].make_table(phi=x, y_kw=None)
 
             # self.clear_msgs()
             message_passing(self, 'max-product')
@@ -405,7 +377,7 @@ class FactorGraph(object):
             self.set_values(clear=True, **y_kw)
 
             for f in self.factors:
-                self.vp_node[f].make(phi=x, y_kw=y_kw)
+                self.vp_node[f].make_table(phi=x, y_kw=y_kw)
 
             # self.clear_msgs()
             # self.message_passing()
@@ -437,7 +409,7 @@ class FactorGraph(object):
             self.set_values(clear=True, **y_kw)
 
             for f in self.factors:
-                self.vp_node[f].make(phi=x, y_kw=y_kw)
+                self.vp_node[f].make_table(phi=x, y_kw=y_kw)
 
             # self.clear_msgs()
             # self.message_passing()

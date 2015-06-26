@@ -5,7 +5,6 @@ import numpy.random as rnd
 
 import pyfgraph
 from pyfgraph.fgraph import FactorGraph
-from pyfgraph.params import Params
 from pyfgraph.nodes import Variable, Factor, FeatFactor
 from pyfgraph.algo import message_passing
 
@@ -29,55 +28,6 @@ def log_setup():
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-def example_indep_params():
-    log_setup()
-
-    fg = FactorGraph()
-
-    V1 = fg.add(Variable, 'V1', arity=2)
-    V2 = fg.add(Variable, 'V2', arity=2)
-    V3 = fg.add(Variable, 'V3', arity=2)
-
-    P1 = Params(n=4)
-    P2 = Params(n=4)
-    P3 = Params(n=4)
-    P_ = Params(n=16)
-
-    F1 = fg.add(FeatFactor, 'F1', V1,           P1)
-    F2 = fg.add(FeatFactor, 'F2', V2,           P2)
-    F3 = fg.add(FeatFactor, 'F3', V3,           P3)
-    F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), P_)
-
-    fg.make(done=True)
-    return fg
-
-def example_dep_params():
-    log_setup()
-
-    fg = FactorGraph()
-
-    V1 = fg.add(Variable, 'V1', arity=2)
-    V2 = fg.add(Variable, 'V2', arity=2)
-    V3 = fg.add(Variable, 'V3', arity=2)
-
-    PV = Params(n=4)
-    P_ = Params(n=16)
-
-    # Feat = Feats(n=2)
-
-# Factors 1, 2 and 3 share the same parameters
-    # F1 = fg.add(FeatFactor, 'F1', V1,           PV, Feat)
-    # F2 = fg.add(FeatFactor, 'F2', V2,           PV, Feat)
-    # F3 = fg.add(FeatFactor, 'F3', V3,           PV, Feat)
-    # F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), P_, Feat)
-    F1 = fg.add(FeatFactor, 'F1', V1,           PV)
-    F2 = fg.add(FeatFactor, 'F2', V2,           PV)
-    F3 = fg.add(FeatFactor, 'F3', V3,           PV)
-    F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), P_)
-
-    fg.make(done=True)
-    return fg
-
 def make_data(n):
     X = rnd.randn(n, 2)
     Y = np.array([ [ x[0]>=0, x[1]>=0, x[0]>=x[1] ] for x in X ], dtype=int)
@@ -87,12 +37,27 @@ def make_data(n):
     return data
 
 if __name__ == '__main__':
-    rnd.seed(1)
+    log_setup()
 
-# Notice that, given the same training and testing data, the model with
-# independent parameters achieves better performance.
-    # fg = example_indep_params()
-    fg = example_dep_params()
+    fg = FactorGraph()
+
+    V1 = fg.add(Variable, 'V1', arity=2)
+    V2 = fg.add(Variable, 'V2', arity=2)
+    V3 = fg.add(Variable, 'V3', arity=2)
+
+# Each factor has its own independent set of parameters
+    F1 = fg.add(FeatFactor, 'F1', V1,           nfeats = 2)
+    F2 = fg.add(FeatFactor, 'F2', V2,           nfeats = 2)
+    F3 = fg.add(FeatFactor, 'F3', V3,           nfeats = 2)
+    F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), nfeats = 2)
+
+# # Factors 1, 2 and 3 share the same parameters
+#     F1 = fg.add(FeatFactor, 'F1', V1,           nfeats = 2, pid=0)
+#     F2 = fg.add(FeatFactor, 'F2', V2,           nfeats = 2, pid=0)
+#     F3 = fg.add(FeatFactor, 'F3', V3,           nfeats = 2, pid=0)
+#     F_ = fg.add(FeatFactor, 'F_', (V1, V2, V3), nfeats = 2)
+
+    fg.make(done=True)
 
     data = make_data(10)
     print 'Training begin.'
