@@ -5,6 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 def message_passing(fgraph, *args):
+    logger.debug('message_passing args %s', *args)
     which = tuple(args)
     if not which:
         which = ('sum-product', 'max-product')
@@ -110,40 +111,61 @@ def _pass_msg(fgraph, e, s, t, which):
             fgraph.ep_mp_msg_vf_nc[e] = mp_msg_nc
     elif s_vtype  == 'factor':
         nname = fgraph.vp_name[t]
-        msgs = { nname: np.ones(fgraph.vp_arity[t]) }
-        msg_nc = 1
-        logger.debug(' * in_msg:    %s', msgs[nname])
-        logger.debug(' * in_msg_nc: %s', msg_nc)
+        msgs, msgs_nc = {}, {}
+        if 'sum-product' in which:
+            msgs['sum-product'] = { nname: np.ones(fgraph.vp_arity[t]) }
+            msgs_nc['sum-product'] = 1
+        if 'max-product' in which:
+            msgs['max-product'] = { nname: np.ones(fgraph.vp_arity[t]) }
+            msgs_nc['max-product'] = 1
+
+        # logger.debug(' * in_msg:    %s', msgs[nname])
+        # logger.debug(' * in_msg_nc: %s', msg_nc)
 
         neighbours = list(s.out_neighbours())
         # neighbours.remove(t)
         for neigh in filter(lambda neigh: neigh != t, neighbours):
             nname = fgraph.vp_name[neigh]
             neigh_edge = fgraph.graph.edge(neigh, s)
-            msgs[nname] = fgraph.ep_mp_msg_vf[neigh_edge]
-            msg_nc *= fgraph.ep_mp_msg_vf_nc[neigh_edge]
-            logger.debug(' * in_msg:    %s', fgraph.ep_mp_msg_vf[neigh_edge])
-            logger.debug(' * in_msg_nc: %s', fgraph.ep_mp_msg_vf_nc[neigh_edge])
+            if 'sum-product' in which:
+                msgs['sum-product'][nname] = fgraph.ep_sp_msg_vf[neigh_edge]
+                msgs_nc['sum-product'] *= fgraph.ep_sp_msg_vf_nc[neigh_edge]
+            if 'max-product' in which:
+                msgs['max-product'][nname] = fgraph.ep_mp_msg_vf[neigh_edge]
+                msgs_nc['max-product'] *= fgraph.ep_mp_msg_vf_nc[neigh_edge]
 
-        msgs = [ msgs[n] for n in fgraph.vp_table_inputs[s] ]
+            # logger.debug(' * in_msg:    %s', fgraph.ep_mp_msg_vf[neigh_edge])
+            # logger.debug(' * in_msg_nc: %s', fgraph.ep_mp_msg_vf_nc[neigh_edge])
+
+        if 'sum-product' in which:
+            msgs['sum-product'] = [ msgs['sum-product'][n] for n in fgraph.vp_table_inputs[s] ]
+        if 'max-product' in which:
+            msgs['max-product'] = [ msgs['max-product'][n] for n in fgraph.vp_table_inputs[s] ]
 
         logger.debug(' * factor: %s', fgraph.vp_table[s])
+        logger.debug(' * msgs: %s', msgs)
+        # logger.debug(' * reduce(*): %s', reduce(np.multiply, np.ix_(*msgs)))
 
-        prod = fgraph.vp_table[s] * reduce(np.multiply, np.ix_(*msgs))
+        prod = {}
+        if 'sum-product' in which:
+            prod['sum-product'] = fgraph.vp_table[s] * reduce(np.multiply, np.ix_(*msgs['sum-product']))
+        if 'max-product' in which:
+            prod['max-product'] = fgraph.vp_table[s] * reduce(np.multiply, np.ix_(*msgs['max-product']))
+
         axis = fgraph.vp_table_inputs[s].index(fgraph.vp_name[t])
         negaxis = tuple(filter(lambda a: a!= axis, range(len(neighbours))))
 
         if 'sum-product' in which:
-            sp_msg = prod.sum(axis = negaxis)
+            sp_msg = prod['sum-product'].sum(axis = negaxis)
             sp_msg_sum = sp_msg.sum()
-            fgraph.ep_sp_msg_fv_nc[e] = msg_nc * sp_msg_sum
+            fgraph.ep_sp_msg_fv_nc[e] = msgs_nc['sum-product'] * sp_msg_sum
             fgraph.ep_sp_msg_fv[e] = sp_msg/sp_msg_sum
             logger.debug(' * out_msg_sp:    %s', fgraph.ep_sp_msg_fv[e])
             logger.debug(' * out_msg_sp_nc: %s', fgraph.ep_sp_msg_fv_nc[e])
         if 'max-product' in which:
-            mp_msg = prod.max(axis = negaxis)
+            mp_msg = prod['max-product'].max(axis = negaxis)
             mp_msg_sum = mp_msg.sum()
-            fgraph.ep_mp_msg_fv_nc[e] = msg_nc * mp_msg_sum
+            fgraph.ep_mp_msg_fv_nc[e] = msgs_nc['max-product'] * mp_msg_sum
             fgraph.ep_mp_msg_fv[e] = mp_msg/mp_msg_sum
             logger.debug(' * out_msg_mp:    %s', fgraph.ep_mp_msg_fv[e])
             logger.debug(' * out_msg_mp_nc: %s', fgraph.ep_mp_msg_fv_nc[e])

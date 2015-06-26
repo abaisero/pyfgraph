@@ -19,7 +19,7 @@ def log_setup():
         filename=os.path.basename(__file__) + '.log',
         filemode='w',
         format=fmt,
-        level=logging.INFO
+        level=logging.DEBUG
     )
 
     logger = logging.getLogger()
@@ -52,6 +52,8 @@ def example_indep_params():
     return fg
 
 def example_dep_params():
+    log_setup()
+
     fg = FactorGraph()
 
     V1 = fg.add(Variable, 'V1', arity=2)
