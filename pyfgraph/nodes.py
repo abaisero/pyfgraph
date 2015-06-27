@@ -72,7 +72,6 @@ class ParamFactor(Factor):
     nparams = 0
     def __init__(self, vertex, name, variables):
         super(ParamFactor, self).__init__(vertex, name, variables)
-        self.pshape = self.arity + (-1,)
         self.pslice = None
 
     def set_pslice(self):
@@ -99,7 +98,7 @@ class FeatFactor(ParamFactor):
     def make_params(self, params):
         self.params = params[self.pslice]
         self.params_tab = self.params.view()
-        self.params_tab.shape = self.pshape
+        self.params_tab.shape = self.arity + (-1,)
 
     def make_table(self, phi, y_kw = None):
 # set/make features
@@ -149,10 +148,10 @@ class FunFactor(ParamFactor):
     def make_table(self, phi, y_kw = None):
 # make/set features
         iterators = { v.name: v.domain for v in self.variables }
-        self.feats = np.array([ self.fun(phi=phi, **prodict) for prodict in proditer(**iterators) ])
+        self.feats = np.array([ self.fun(phi=phi, variables=prodict.values(), **prodict) for prodict in proditer(**iterators) ])
         self.feats.shape = self.arity + (-1,)
 # TODO unnecessary?
-        self.nfeats = self.feats.shape[-1]
+        # self.nfeats = self.feats.shape[-1]
 
 # make/set table
         self.nl_table = np.dot(self.feats, self.params)
