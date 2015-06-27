@@ -42,6 +42,10 @@ class Factor(Node):
         logger.error('Factor.set() is an interface and is not implemented yet.')
         raise NotImplementedError
 
+    def make_params(self, params):
+        logger.error('Factor.make_params() is an interface and is not implemented yet.')
+        raise NotImplementedError
+
     def make_table(self, phi = None, y_kw = None):
         logger.error('Factor.make_table() is an interface and is not implemented yet.')
         raise NotImplementedError
@@ -63,6 +67,9 @@ class TabFactor(Factor):
             self.table = table
         else:
             NotImplementedError('setTable failed with type(table) = {}'.format(type(table)))
+
+    def make_params(self, params):
+        pass
 
     def make_table(self, phi = None, y_kw = None):
         pass
@@ -112,7 +119,7 @@ class FeatFactor(ParamFactor):
 
     def gradient(self):
         idx = tuple( v.value for v in self.variables )
-        pr = self.graph.pr(self.vertex, with_l1_norm=False)
+        pr = self.graph.pr(self.vertex)
 
         ttable = np.zeros(self.arity)
         ttable[idx] = 1
@@ -159,7 +166,7 @@ class FunFactor(ParamFactor):
         
     def gradient(self):
         idx = tuple( v.value for v in self.variables)
-        pr = self.graph.pr(self.vertex, with_l1_norm=False)
+        pr = self.graph.pr(self.vertex)
 
         g = np.zeros(ParamFactor.nparams)
         g[self.pslice] = self.feats[idx] - np.tensordot(pr, self.feats, self.nvariables)

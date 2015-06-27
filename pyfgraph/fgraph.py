@@ -9,6 +9,7 @@ from graph_tool.util import find_vertex
 import scipy.optimize as opt
 import itertools as itt
 
+import math
 import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
@@ -25,7 +26,6 @@ class FactorGraph(object):
         self.graph = Graph(directed=False)
         self.variables = []
         self.factors = []
-        self.Z = None
         self.logZ = None
 
         self.make_done = False
@@ -43,14 +43,14 @@ class FactorGraph(object):
         self.vp_node = self.graph.new_vertex_property("object")
 
         self.ep_sp_msg_fv = self.graph.new_edge_property("object")
-        self.ep_sp_msg_fv_nc = self.graph.new_edge_property("double")
+        self.ep_sp_msg_fv_lnc = self.graph.new_edge_property("double")
         self.ep_sp_msg_vf = self.graph.new_edge_property("object")
-        self.ep_sp_msg_vf_nc = self.graph.new_edge_property("double")
+        self.ep_sp_msg_vf_lnc = self.graph.new_edge_property("double")
 
         self.ep_mp_msg_fv = self.graph.new_edge_property("object")
-        self.ep_mp_msg_fv_nc = self.graph.new_edge_property("double")
+        self.ep_mp_msg_fv_lnc = self.graph.new_edge_property("double")
         self.ep_mp_msg_vf = self.graph.new_edge_property("object")
-        self.ep_mp_msg_vf_nc = self.graph.new_edge_property("double")
+        self.ep_mp_msg_vf_lnc = self.graph.new_edge_property("double")
 
     def add(self, cls, *args, **kwargs):
         if self.make_done:
@@ -231,7 +231,7 @@ class FactorGraph(object):
         print 'Marginal Probabilities Variables'
         print 'v: ', v
         print 'variable: {}'.format(self.vp_name[v])
-        print 'pr: {}'.format(self.pr(v, with_l1_norm=True))
+        print 'pr: {}'.format(self.pr(v, with_log_norm=True))
 
     # def init_message_passing(self):
     #     for f in self.factors:
@@ -252,7 +252,7 @@ class FactorGraph(object):
     #     logger.debug('Message Passing Done.')
 
 # # computing partition function for this specific instance of message passing
-    #     _, self.Z = self.pr(self.variables[0], with_l1_norm=True)
+    #     _, self.Z = self.pr(self.variables[0], with_log_norm=True)
     #     # self.Z = pr.sum()
     #     self.logZ = np.log(self.Z)
 
@@ -263,11 +263,11 @@ class FactorGraph(object):
         print 'Checking the message passing. For each variable, all the rows should be the same.'
         for v in self.variables:
             print 'Variable', self.vp_name[v]
-            print np.array([ self.ep_sp_msg_fv_nc[e] * self.ep_sp_msg_fv[e] for e in v.out_edges() ]).prod(axis=0)
+            print np.sum([ self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e]) for e in v.out_edges() ], axis = 0)
             for e in v.out_edges():
-                msg_vf = self.ep_sp_msg_vf_nc[e] * self.ep_sp_msg_vf[e]
-                msg_fv = self.ep_sp_msg_fv_nc[e] * self.ep_sp_msg_fv[e]
-                print msg_vf * msg_fv
+                msg_vf = self.ep_sp_msg_vf_lnc[e] + np.log(self.ep_sp_msg_vf[e])
+                msg_fv = self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e])
+                print msg_vf + msg_fv
 
     def write(self):
         print 'Vertices:'
@@ -280,35 +280,39 @@ class FactorGraph(object):
             print ' * table_inputs: {}'.format(self.vp_table_inputs[v])
             print ' * arity: {}'.format(self.vp_arity[v])
 
-    def pr(self, vertex, with_l1_norm=False):
+    def pr(self, vertex, with_log_norm=False):
         s_vtype = self.vp_type[vertex]
         if s_vtype == 'variable':
             e = vertex.out_edges().next()
             pr = self.ep_sp_msg_vf[e] * self.ep_sp_msg_fv[e]
             prs = pr.sum()
+            lprs = math.log(prs)
 
-            if with_l1_norm:
-                nc = self.ep_sp_msg_vf_nc[e] * self.ep_sp_msg_fv_nc[e] * prs
+            if with_log_norm:
+                lnc = self.ep_sp_msg_vf_lnc[e] + self.ep_sp_msg_fv_lnc[e] + lprs
         elif s_vtype == 'factor':
             msgs = { self.vp_name[e.target()]: self.ep_sp_msg_vf[e] for e in vertex.out_edges() }
             msgs = [ msgs[n] for n in self.vp_table_inputs[vertex] ]
             pr = self.vp_table[vertex] * reduce(np.multiply, np.ix_(*msgs))
             prs = pr.sum()
 
-            if with_l1_norm:
-                nc = np.array([ self.ep_sp_msg_vf_nc[e] for e in vertex.out_edges() ]).prod() * prs
+            if with_log_norm:
+                lnc = np.array([ self.ep_sp_msg_vf_lnc[e] for e in vertex.out_edges() ]).sum() + lprs
         else:
             raise Exception('variable type error: {}'.format(s_vtype))
 
         logger.debug('pr: %s'.format(pr))
         pr /= prs
         logger.debug('pr: %s'.format(pr))
-        return (pr, nc) if with_l1_norm else pr
+        return (pr, lnc) if with_log_norm else pr
 
     def max(self):
         v = self.variables[0]
         e = v.out_edges().next()
-        return ( self.ep_mp_msg_vf_nc[e] * self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv_nc[e] * self.ep_mp_msg_fv[e] ).max()
+        vf_nc = math.exp(self.ep_mp_msg_vf_lnc[e])
+        fv_nc = math.exp(self.ep_mp_msg_fv_lnc[e])
+        return vf_nc * fv_nc * ( self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e] ).max()
+        # return ( vf_nc * self.ep_mp_msg_vf[e] * fv_nc * self.ep_mp_msg_fv[e] ).max()
 
     def argmax(self):
         return [

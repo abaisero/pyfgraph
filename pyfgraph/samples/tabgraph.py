@@ -1,35 +1,7 @@
-#! /usr/bin/python
-
-import numpy as np
-
-import pyfgraph
 from pyfgraph.fgraph import FactorGraph
-from pyfgraph.nodes import Variable, Factor, TabFactor, FeatFactor, FunFactor
-from pyfgraph.algo import message_passing
+from pyfgraph.nodes import Variable, TabFactor
 
-import os, logging
-
-def log_setup():
-    fmt = '%(asctime)s - %(levelname)s - %(message)s'
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-    logging.basicConfig(
-        filename=os.path.basename(__file__) + '.log',
-        filemode='w',
-        format=fmt,
-        level=logging.DEBUG
-    )
-
-    logger = logging.getLogger()
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-
-if __name__ == '__main__':
-    log_setup()
-
+def simple_tabgraph():
     fg = FactorGraph()
 
     V1 = fg.add(Variable, 'V1', arity=2)
@@ -67,16 +39,4 @@ if __name__ == '__main__':
 #              [ 10, 1 ]]])
 
     fg.make(done=True)
-
-    message_passing(fg, 'sum-product', 'max-product')
-
-    print ' === Message Checking === '
-    fg.check_message_passing()
-
-    print ' === Viterbi === '
-    print 'argmax: {}'.format(fg.argmax())
-    print 'max: {}'.format(fg.max())
-
-    print ' === Partition Function === '
-    print 'Z: {}'.format(fg.Z)
-    print 'logZ: {}'.format(fg.logZ)
+    return fg
