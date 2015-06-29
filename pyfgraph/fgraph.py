@@ -20,12 +20,31 @@ from algo import message_passing
 import logging
 logger = logging.getLogger(__name__)
 
+class Feats(object):
+    def __init__(self, feats):
+        self._feats = feats
+        setattr(self, feats, slice(None))
+        self._fdict = { feats: slice(None) }
+        self._nfeats = 0
+
+    def add(self, feats, nfeats):
+        sl = slice(self._nfeats, self._nfeats + nfeats)
+        setattr(self, feats, sl)
+        self._fdict.update({ feats: sl })
+        self._nfeats += nfeats
+
+    def X_kwlist(self, X):
+        return [ { k: x[v] for k, v in self._fdict.iteritems() } for x in X ]
+
 class FactorGraph(object):
     def __init__(self):
         self.graph = Graph(directed=False)
         self.variables = []
         self.factors = []
         self.logZ = None
+
+        self._feats = None
+        self._fdesc = None
         self._params = None
 
         self.make_done = False
@@ -52,16 +71,23 @@ class FactorGraph(object):
         self.ep_mp_msg_vf = self.graph.new_edge_property("object")
         self.ep_mp_msg_vf_lnc = self.graph.new_edge_property("double")
 
+    @property
+    def values(self):
+        return [ self.vp_node[v].value for v in self.variables ]
+
+    @property
+    def vdict(self):
+        return { v.name: v.domain for v in self.variables }
+
     def add(self, cls, *args, **kwargs):
         if self.make_done:
-            raise Exception('MakeGraph is not done')
+            raise Exception('MakeGraph is already done')
 
         vertex = self.graph.add_vertex()
         if not issubclass(cls, Node):
             raise Exception('what are you doing..')
 
-        c = cls(vertex, *args, **kwargs)
-        c.graph = self
+        c = cls(self, vertex, *args, **kwargs)
         self.vp_node[vertex] = c
         self.vp_name[vertex] = c.name
 
@@ -95,7 +121,7 @@ class FactorGraph(object):
             self.params = np.empty(ParamFactor.nparams)
 
             for f in self.factors:
-                self.vp_node[f].make_params(self.params)
+                self.vp_node[f].make(self.feats, self.params)
         else:
             pass
 # TODO set other variables
@@ -323,6 +349,41 @@ class FactorGraph(object):
             yield v.out_edges().next()
 
     @property
+    def feats(self):
+        return self._feats
+
+    @property
+    def fdesc(self):
+        return self._fdesc
+
+    @feats.setter
+    def feats(self, value):
+        if isinstance(value, Feats):
+            self._fdesc = value
+            self._feats = np.empty(value._nfeats)
+        elif isinstance(value, np.ndarray):
+            if self.nfeats == value.size:
+                self._feats[:] = value.ravel()
+            else:
+                self._feats = value.ravel()
+        else:
+            raise NotImplementedError('feats.setter with object type {} not defined.'.format(type(value)))
+
+    @property
+    def nfeats(self):
+        if isinstance(self._feats, np.ndarray):
+            return self._feats.size
+        else:
+            return None
+
+    # @nfeats.setter
+    # def nfeats(self, value):
+    #     if isinstance(value, int) and value > 0:
+    #         self.feats = np.empty(value)
+    #     else:
+    #         raise Exception('nfeats.setter with object type {} not defined.').format(type(value))
+
+    @property
     def params(self):
         return self._params
 
@@ -336,7 +397,7 @@ class FactorGraph(object):
         elif value == 'random':
             self._params[:] = .01 * rnd.randn(self._params.size)
         else:
-            raise NotImplementedError('params.setter with object type {} not defined.').format(type(params))
+            raise NotImplementedError('params.setter with object type {} not defined.').format(type(value))
 
     @property
     def nparams(self):
@@ -352,11 +413,17 @@ class FactorGraph(object):
         if params is not None:
             self.params = params
 
+        if 'X_kwlist' not in data:
+            data['X_kwlist'] = self.fdesc.X_kwlist(data['X'])
+
         vit = []
         for x in data['X']:
             self.clear_values()
+            self.feats = x
             for f in self.factors:
-                self.vp_node[f].make_table(phi=x, y_kw=None)
+                self.vp_node[f].make_table(x_kw=x_kw, y_kw=None)
+            # for f in self.factors:
+            #     self.vp_node[f].make_table(phi=x, y_kw=None)
 
             # self.clear_msgs()
             message_passing(self, 'max-product')
@@ -373,23 +440,29 @@ class FactorGraph(object):
             # return -np.log([ self.vp_node[f].l() for f in self.factors ]).sum()
             return self.logZ - np.log(self.l())
 
+        if 'X_kw' not in data:
+            data['X_kw'] = self.fdesc.X_kwlist(data['X'])
+
         logger.debug('Computing NLL')
 
         if params is not None:
             self.params = params
 
         X, Y = data['X'], data['Y']
+        X_kwlist = data['X_kwlist']
         Y_kwlist = data['Y_kwlist']
         
         ndata = X.shape[0]
 
         nll = np.empty(ndata)
         logger.debug('Allocating nll array with shape %s', nll.shape)
-        for i, x, y, y_kw in itt.izip(itt.count(), X, Y, Y_kwlist):
+        for i, x, y, x_kw, y_kw in itt.izip(itt.count(), X, Y, X_kwlist, Y_kwlist):
             self.set_values(clear=True, **y_kw)
+            self.feats = x
 
             for f in self.factors:
-                self.vp_node[f].make_table(phi=x, y_kw=y_kw)
+                self.vp_node[f].make_table(x_kw=x_kw, y_kw=y_kw)
+                # self.vp_node[f].make_table(phi=x, y_kw=y_kw)
 
             # self.clear_msgs()
             # self.message_passing()
@@ -404,23 +477,27 @@ class FactorGraph(object):
 # Assume data is already set, 
             return np.array([ self.vp_node[f].gradient() for f in self.factors ]).sum(axis=0)
 
+        if 'X_kwlist' not in data:
+            data['X_kwlist'] = self.fdesc.X_kwlist(data['X'])
+
         logger.debug('Computing DNLL')
 
         if params is not None:
             self.params = params
 
         X, Y = data['X'], data['Y']
+        X_kwlist = data['X_kwlist']
         Y_kwlist = data['Y_kwlist']
         
         ndata = X.shape[0]
 
         dnll = np.empty((ndata, self.nparams))
         logger.debug('Allocating dnll array with shape %s', dnll.shape)
-        for i, x, y, y_kw in itt.izip(itt.count(), X, Y, Y_kwlist):
+        for i, x, y, x_kw, y_kw in itt.izip(itt.count(), X, Y, X_kwlist, Y_kwlist):
             self.set_values(clear=True, **y_kw)
 
             for f in self.factors:
-                self.vp_node[f].make_table(phi=x, y_kw=y_kw)
+                self.vp_node[f].make_table(x_kw=x_kw, y_kw=y_kw)
 
             # self.clear_msgs()
             # self.message_passing()
@@ -431,13 +508,13 @@ class FactorGraph(object):
 
         return dnll
 
-    def initFactorDims(self, data):
-        nfeats = data['X'].shape[1]
-        for f in self.factors:
-            self.vp_node[f].nfeats = nfeats
+    # def initFactorDims(self, data):
+    #     nfeats = data['X'].shape[1]
+    #     for f in self.factors:
+    #         self.vp_node[f].nfeats = nfeats
 
     def train(self, data):
-        self.initFactorDims(data)
+        # self.initFactorDims(data)
         self.params = 'random'
 
         def fun(params):
