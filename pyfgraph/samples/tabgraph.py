@@ -15,15 +15,15 @@ def simple_tabgraph():
     # F4 = fg.add(Factor, 'F4', (V1, V2, V3))
 
 # F1 prefers if V1 is 0
-    F1.set([ 10, 1 ])
+    F1.table = [ 10, 1 ]
 
 # F2 prefers if V1 and V2 are the same
-    F2.set([[ 10, 1 ],
-            [ 1, 10 ]])
+    F2.table = [[ 10, 1 ],
+                [ 1, 10 ]]
 
 # F3 prefers if V2 and V3 are different
-    F3.set([[ 1, 10 ],
-            [ 10, 1 ]])
+    F3.table = [[ 1, 10 ],
+                [ 10, 1 ]]
 
 # # F4 prefers if exactly one of the variables is 1
 #     F4.set([[[ 1, 10 ],

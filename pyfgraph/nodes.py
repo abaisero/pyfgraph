@@ -36,6 +36,8 @@ class Factor(Node):
             raise Exception
         if idx is None:
             idx = tuple( v.value for v in self.variables )
+        value = self.table[idx]
+        logger.debug('%s.value(): %s', self.name, value)
         return self.table[idx]
 
     def set(self, *args, **kwargs):
@@ -57,16 +59,32 @@ class Factor(Node):
 class TabFactor(Factor):
     def __init__(self, *args, **kwargs):
         super(TabFactor, self).__init__(*args, **kwargs)
+        self._table = None
 
-    def set(self, table):
-        if isinstance(table, (int ,long, float)):
-            self.table.fill(table)
-        elif isinstance(table, list):
-            self.table = np.array(table)
-        elif isinstance(table, np.ndarray):
-            self.table = table
+    @property
+    def table(self):
+        return self._table
+
+    @table.setter
+    def table(self, value):
+        if isinstance(value, (int, long, float)):
+            self._table.fill(value)
+        elif isinstance(value, list):
+            self._table = np.array(value)
+        elif isinstance(value, np.ndarray):
+            self._table = value
         else:
-            NotImplementedError('setTable failed with type(table) = {}'.format(type(table)))
+            NotImplementedError('{}.table.setter() failed with type(table) = {}'.format(self.name, type(value)))
+
+    # def set(self, table):
+    #     if isinstance(table, (int ,long, float)):
+    #         self.table.fill(table)
+    #     elif isinstance(table, list):
+    #         self.table = np.array(table)
+    #     elif isinstance(table, np.ndarray):
+    #         self.table = table
+    #     else:
+    #         NotImplementedError('setTable failed with type(table) = {}'.format(type(table)))
 
     def make_params(self, params):
         pass
@@ -79,17 +97,22 @@ class ParamFactor(Factor):
     nparams = 0
     def __init__(self, vertex, name, variables):
         super(ParamFactor, self).__init__(vertex, name, variables)
-        self.pslice = None
+        self._pslice = None
 
-    def set_pslice(self):
-        if self.pid is None or self.pid not in ParamFactor.pslices:
-            self.pslice = slice(ParamFactor.nparams, ParamFactor.nparams+self.nparams)
+    @property
+    def pslice(self):
+        return self._pslice
+
+    @pslice.setter
+    def pslice(self, value):
+        if value is None or value not in ParamFactor.pslices:
+            self._pslice = slice(ParamFactor.nparams, ParamFactor.nparams+self.nparams)
             ParamFactor.nparams += self.nparams
         else:
-            self.pslice = ParamFactor.pslices[self.pid]
+            self._pslice = ParamFactor.pslices[value]
 
-        if self.pid is not None and self.pid not in ParamFactor.pslices:
-            ParamFactor.pslices[self.pid] = self.pslice
+        if value is not None and value not in ParamFactor.pslices:
+            ParamFactor.pslices[value] = self._pslice
 
 from operator import mul
 
@@ -99,8 +122,7 @@ class FeatFactor(ParamFactor):
 
         self.nfeats = nfeats
         self.nparams = reduce(mul, self.arity) * nfeats
-        self.pid = pid
-        self.set_pslice()
+        self.pslice = pid
 
     def make_params(self, params):
         self.params = params[self.pslice]
@@ -141,13 +163,23 @@ class FunFactor(ParamFactor):
 
         self.nfeats = nfeats
         self.nparams = nfeats
-        self.pid = pid
-        self.set_pslice()
+        self.pslice = pid
 
-        self.fun = None
+        self._fun = None
 
-    def set(self, fun):
-        self.fun = kwargsdec(fun)
+    @property
+    def fun(self):
+        return self._fun
+
+    @fun.setter
+    def fun(self, value):
+        if callable(value):
+            self._fun = kwargsdec(value)
+        else:
+            raise Exception('{}.fun.setter() requires a callable as argument.'.format(self.name))
+
+    # def set(self, fun):
+    #     self.fun = kwargsdec(fun)
 
     def make_params(self, params):
         self.params = params[self.pslice]

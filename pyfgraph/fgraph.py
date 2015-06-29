@@ -14,7 +14,6 @@ import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
 
-# from params import Params
 from nodes import Node, Variable, Factor, ParamFactor, FeatFactor, FunFactor
 from algo import message_passing
 
@@ -27,6 +26,7 @@ class FactorGraph(object):
         self.variables = []
         self.factors = []
         self.logZ = None
+        self._params = None
 
         self.make_done = False
 
@@ -92,8 +92,7 @@ class FactorGraph(object):
 
     def make(self, done=False):
         if done:
-            self.nparams = ParamFactor.nparams
-            self.params = np.empty(self.nparams)
+            self.params = np.empty(ParamFactor.nparams)
 
             for f in self.factors:
                 self.vp_node[f].make_params(self.params)
@@ -323,26 +322,35 @@ class FactorGraph(object):
         for v in self.variables:
             yield v.out_edges().next()
 
-# TODO revolutionize this. No need to keep on concatenating stuff and so on.....
+    @property
+    def params(self):
+        return self._params
 
-    def getParams(self):
-        return self.params
-
-    def setParams(self, params):
-        if isinstance(params, np.ndarray):
-            self.params[:] = params.ravel()
-        elif params == 'random':
-            self.params[:] = .1 * rnd.randn(self.params.size)
+    @params.setter
+    def params(self, value):
+        if isinstance(value, np.ndarray):
+            if self.nparams == value.size:
+                self._params[:] = value.ravel()
+            else:
+                self._params = value.ravel()
+        elif value == 'random':
+            self._params[:] = .01 * rnd.randn(self._params.size)
         else:
-            raise NotImplementedError('setParams with {} not done yet').format(params)
-        self.nparams = self.params.size
+            raise NotImplementedError('params.setter with object type {} not defined.').format(type(params))
 
+    @property
+    def nparams(self):
+        if isinstance(self._params, np.ndarray):
+            return self._params.size
+        else:
+            return None
+    
     def l(self):
         return np.prod([ self.vp_node[f].value() for f in self.factors ])
 
     def viterbi(self, data = None, params = None):
         if params is not None:
-            self.setParams(params)
+            self.params = params
 
         vit = []
         for x in data['X']:
@@ -368,7 +376,7 @@ class FactorGraph(object):
         logger.debug('Computing NLL')
 
         if params is not None:
-            self.setParams(params)
+            self.params = params
 
         X, Y = data['X'], data['Y']
         Y_kwlist = data['Y_kwlist']
@@ -399,8 +407,7 @@ class FactorGraph(object):
         logger.debug('Computing DNLL')
 
         if params is not None:
-            self.setParams(params)
-
+            self.params = params
 
         X, Y = data['X'], data['Y']
         Y_kwlist = data['Y_kwlist']
@@ -431,13 +438,13 @@ class FactorGraph(object):
 
     def train(self, data):
         self.initFactorDims(data)
-        self.setParams('random')
+        self.params = 'random'
 
         def fun(params):
             cost = self.nll(data = data, params = params).sum() 
             reg = 1. * la.norm(params, ord=1)
-            logger.debug('fun cost: (shape %s) %s', cost.shape, cost)
-            logger.debug('fun reg:  (shape %s) %s', reg.shape, reg)
+            logger.debug('fun cost: %s', cost)
+            logger.debug('fun reg:  %s', reg)
             return cost + reg
 
         def jac(params):
@@ -448,14 +455,13 @@ class FactorGraph(object):
             return dcost + dreg
 
         logger.info('BEGIN Optimization')
-        x0 = self.getParams()
         res = opt.minimize(
             fun      = fun,
-            x0       = self.getParams(),
+            x0       = self.params,
             jac      = jac,
         )
-        logger.info('END   Optimization')
-        logger.info('Training result: {}'.format(res))
+        logger.info('END Optimization')
+        logger.info('Training result: %s', res)
         # if not res.success:
         #     raise Exception('Failed to train!')
-        self.setParams(res.x)
+        self.params = res.x
