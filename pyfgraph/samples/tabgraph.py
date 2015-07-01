@@ -1,5 +1,7 @@
 from pyfgraph.fgraph import FactorGraph
 from pyfgraph.nodes import Variable, TabFactor
+from pyfgraph.algo import message_passing
+import pyfgraph.utils.log as log
 
 def simple_tabgraph():
     fg = FactorGraph()
@@ -11,8 +13,6 @@ def simple_tabgraph():
     F1 = fg.add(TabFactor, 'F1', V1          )
     F2 = fg.add(TabFactor, 'F2', (V1, V2)    )
     F3 = fg.add(TabFactor, 'F3', (V2, V3)    )
-# TODO This factor requires loopy bp
-    # F4 = fg.add(Factor, 'F4', (V1, V2, V3))
 
 # F1 prefers if V1 is 0
     F1.table = [ 10, 1 ]
@@ -25,18 +25,14 @@ def simple_tabgraph():
     F3.table = [[ 1, 10 ],
                 [ 10, 1 ]]
 
-# # F4 prefers if exactly one of the variables is 1
-#     F4.set([[[ 1, 10 ],
-#              [ 10, 1 ]],
-#             [[ 10, 1 ],
-#              [ 1,  1 ]]])
-
-# uncomment the following to change F4, and watch out for the different output
-# # F4 prefers if exactly two of the variables are 1
-#     F4.set([[[ 1, 1 ],
-#              [ 1, 10 ]],
-#             [[ 1, 10 ],
-#              [ 10, 1 ]]])
-
-    fg.make(done=True)
+    fg.make()
     return fg
+
+if __name__ == '__main__':
+    log.setup_file_logger('log.tabgraph.log')
+    fg = simple_tabgraph()
+    message_passing(fg, 'max-product', 'sum-product')
+
+    print 'max:    {}'.format(fg.max())
+    print 'argmax: {}'.format(fg.argmax())
+

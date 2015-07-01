@@ -1,9 +1,11 @@
 import numpy as np
 import numpy.random as rnd
 
-# from params import Params
+from parametric import Params
 from utils.decorators import kwargsdec
 from utils.iterators import proditer
+
+from operator import mul
 
 import logging
 logger = logging.getLogger(__name__)
@@ -25,18 +27,25 @@ class Variable(Node):
         self.value = None
 
 class Factor(Node):
-    def __init__(self, graph, vertex, name, variables):
+    def __init__(self, graph, vertex, name, variables, feats=None, params=None):
         super(Factor, self).__init__(graph, vertex, name)
         self.variables = variables if isinstance(variables, tuple) else (variables,)
-        self.nvariables = len(self.variables)
+        self.feats = feats
+        self.params = params
+
         self.arity = tuple( v.arity for v in self.variables )
         self.table = None
+
+    @property
+    def nvariables(self):
+        return len(self.variables)
 
     def value(self, idx = None):
         if self.table is None:
             raise Exception
         if idx is None:
             idx = tuple( v.value for v in self.variables )
+
         value = self.table[idx]
         logger.debug('%s.value(): %s', self.name, value)
         return self.table[idx]
@@ -49,7 +58,7 @@ class Factor(Node):
         logger.error('Factor.make() is an interface and is not implemented yet.')
         raise NotImplementedError
 
-    def make_table(self, x_kw, y_kw=None):
+    def make_table(self):
         logger.error('Factor.make_table() is an interface and is not implemented yet.')
         raise NotImplementedError
 
@@ -58,8 +67,8 @@ class Factor(Node):
         raise NotImplementedError
 
 class TabFactor(Factor):
-    def __init__(self, *args, **kwargs):
-        super(TabFactor, self).__init__(*args, **kwargs)
+    def __init__(self, graph, vertex, name, variables):
+        super(TabFactor, self).__init__(graph, vertex, name, variables)
         self._table = None
 
     @property
@@ -77,91 +86,32 @@ class TabFactor(Factor):
         else:
             NotImplementedError('{}.table.setter() failed with type(table) = {}'.format(self.name, type(value)))
 
-    # def set(self, table):
-    #     if isinstance(table, (int ,long, float)):
-    #         self.table.fill(table)
-    #     elif isinstance(table, list):
-    #         self.table = np.array(table)
-    #     elif isinstance(table, np.ndarray):
-    #         self.table = table
-    #     else:
-    #         NotImplementedError('setTable failed with type(table) = {}'.format(type(table)))
-
-    def make(self, feats, params):
+    def make(self):
         pass
 
-    def make_table(self, x_kw = None, y_kw = None):
+    def make_table(self):
         pass
 
-class ParamFactor(Factor):
-    fslices = {}
-    nfeats = 0
+class FeatFactor(Factor):
+    def __init__(self, graph, vertex, name, variables, feats = None, params = None):
+        super(FeatFactor, self).__init__(graph, vertex, name, variables, feats, params)
+        if self.params is None:
+            self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=reduce(mul, self.arity)*self.feats.nfeats)
 
-    pslices = {}
-    nparams = 0
+# TODO if no params is given, create a new parameter which matchec this type of Factor
+        # self.nparams = reduce(mul, self.arity) * self.feats.nfeats
 
-    def __init__(self, graph, vertex, name, variables):
-        super(ParamFactor, self).__init__(graph, vertex, name, variables)
-        self._fslice = None
-        self._pslice = None
-
-    @property
-    def fslice(self):
-        return self._fslice
-
-    @fslice.setter
-    def fslice(self, value):
-        if value is None:
-            self._fslice = slice(None)
-            self.nfeats = self.graph.fdesc._nfeats
-        elif isinstance(value, slice):
-            self._fslice = value
-            self.nfeats = self.graph.fdesc._fdict[value]
-
-    @property
-    def pslice(self):
-        return self._pslice
-
-    @pslice.setter
-    def pslice(self, value):
-        if value is None or value not in ParamFactor.pslices:
-            self._pslice = slice(ParamFactor.nparams, ParamFactor.nparams+self.nparams)
-            ParamFactor.nparams += self.nparams
-        else:
-            self._pslice = ParamFactor.pslices[value]
-
-        if value is not None and value not in ParamFactor.pslices:
-            ParamFactor.pslices[value] = self._pslice
-
-from operator import mul
-
-class FeatFactor(ParamFactor):
-    def __init__(self, graph, vertex, name, variables, fid = None, pid = None):
-        super(FeatFactor, self).__init__(graph, vertex, name, variables)
-
-# TODO get the fslice related wit this fid
-
-        self.fslice = fid
-        print self.nfeats
-        self.nparams = reduce(mul, self.arity) * self.nfeats
-        self.pslice = pid
-
-    def make(self, feats, params):
-        self.feats = feats[self.fslice]
-
-        self.params = params[self.pslice]
-        self.params_tab = self.params.view()
+    def make(self):
+        self.params_tab = self.params.params.view()
         self.params_tab.shape = self.arity + (-1,)
-        
-        logger.debug('%s.fslice:           %s', self.name, self.fslice)
-        logger.debug('%s.feats.shape:      %s', self.name, self.feats.shape)
-        logger.debug('%s.pslice:           %s', self.name, self.pslice)
-        logger.debug('%s.params.shape:     %s', self.name, self.params.shape)
-        logger.debug('%s.params_tab.shape: %s', self.name, self.params_tab.shape)
 
-    def make_table(self, x_kw=None, y_kw=None):
+    def make_table(self):
 # set/make table
-        self.nl_table = np.dot(self.params_tab, self.feats)
+
+        # print 'feats:', self.feats.feats
+        # print 'params_tab', self.params_tab
+        self.nl_table = np.dot(self.params_tab, self.feats.feats)
+        # print 'nl_table', self.nl_table
         self.table = np.exp(-self.nl_table)
 
     def gradient(self):
@@ -171,25 +121,30 @@ class FeatFactor(ParamFactor):
         ttable = np.zeros(self.arity)
         ttable[idx] = 1
 
-        logger.debug('%s.gradient():', self.name)
-        logger.debug(' * ttable: %s', ttable)
-        logger.debug(' * pr:     %s', pr)
-        logger.debug(' * first:  %s', np.kron(ttable, self.feats))
-        logger.debug(' * second: %s', np.kron(pr, self.feats))
+        # logger.debug('%s.gradient():', self.name)
+        # logger.debug(' * ttable: %s', ttable)
+        # logger.debug(' * pr:     %s', pr)
+        # logger.debug(' * first:  %s', np.kron(ttable, self.feats.feats))
+        # logger.debug(' * second: %s', np.kron(pr, self.feats.feats))
 
-        g = np.zeros(ParamFactor.nparams)
+        g = np.zeros(Params.nparams)
         # g[self.pslice] = (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
-        g[self.pslice] = np.kron(ttable-pr, self.feats).ravel()
+        g[self.params.pslice] = np.kron(ttable-pr, self.feats.feats).ravel()
         return g
 
-class FunFactor(ParamFactor):
-    def __init__(self, graph, vertex, name, variables, fid = None, pid = None):
-        super(FunFactor, self).__init__(graph, vertex, name, variables)
+class FunFactor(Factor):
+    def __init__(self, graph, vertex, name, variables, feats = None, params = None, nfunfeats = None):
+        super(FunFactor, self).__init__(graph, vertex, name, variables, feats, params)
 
-        self.fslice = fid
-        self.nparams = self.nfeats
-        self.pslice = pid
+        if self.feats is None and nfunfeats is None:
+            raise Exception('FunFactor.__init__() requires either `feats` or `nfunfeats` to be specified')
+        if self.feats is not None and nfunfeats is not None and self.feats.nfeats != nfunfeats:
+            raise Exception('FunFactor.__init__() receives incompatible `feats` and `nfunfeats` parameters')
 
+        self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=nfunfeats or self.feats.nfeats)
+        # if nfunfeats is None:
+        #     nfunfeats = self.feats.nfeats
+        # self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=nfunfeats)
         self._fun = None
 
     @property
@@ -203,36 +158,28 @@ class FunFactor(ParamFactor):
         else:
             raise Exception('{}.fun.setter() requires a callable as argument.'.format(self.name))
 
-    # def set(self, fun):
-    #     self.fun = kwargsdec(fun)
+    def make(self):
+        pass
 
-    def make(self, feats, params):
-        self.params = params[self.pslice]
-        
-        logger.debug('%s.fslice:           %s', self.name, self.fslice)
-        logger.debug('%s.feats.shape:      %s', self.name, self.feats.shape)
-        logger.debug('%s.pslice:           %s', self.name, self.pslice)
-        logger.debug('%s.params.shape:     %s', self.name, self.params.shape)
-        logger.debug('%s.params_tab.shape: %s', self.name, self.params_tab.shape)
-
-    def make_table(self, x_kw=None, y_kw=None):
+    def make_table(self):
 # make/set features
-        vdict = self.graph.vdict
-# TODO fix this
-        self.feats = np.array([ self.fun(fg = self.graph, **dict(x_kw, **prodict)) for prodict in proditer(**vdict) ])
-        self.feats.shape = self.arity + (-1,)
-# TODO unnecessary?
-        # self.nfeats = self.feats.shape[-1]
+        kwargs = { '_graph': self.graph }
+        kwargs.update({ feat.name: feat.feats for feat in self.graph.features })
+# update with variable values
+        # print kwargs
+        vdict = self.graph.vdict(self.variables)
+        self.funfeats = np.array([ self.fun(_values = prodict.values(), **dict(kwargs, **prodict)) for prodict in proditer(**vdict) ])
+        self.funfeats.shape = self.arity + (-1,)
 
 # make/set table
-        self.nl_table = np.dot(self.feats, self.params)
+        self.nl_table = np.dot(self.funfeats, self.params.params)
         self.table = np.exp(-self.nl_table)
         
     def gradient(self):
         idx = tuple( v.value for v in self.variables)
         pr = self.graph.pr(self.vertex)
 
-        g = np.zeros(ParamFactor.nparams)
-        g[self.pslice] = self.feats[idx] - np.tensordot(pr, self.feats, self.nvariables)
+        g = np.zeros(Params.nparams)
+        g[self.params.pslice] = self.funfeats[idx] - np.tensordot(pr, self.funfeats, self.nvariables)
         return g
 

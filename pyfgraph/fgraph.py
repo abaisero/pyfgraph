@@ -14,40 +14,24 @@ import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
 
-from nodes import Node, Variable, Factor, ParamFactor, FeatFactor, FunFactor
-from algo import message_passing
+from parametric import Feats, Params
+from nodes import Node, Variable, Factor, FeatFactor, FunFactor
+import algo
 
 import logging
 logger = logging.getLogger(__name__)
-
-class Feats(object):
-    def __init__(self, feats):
-        self._feats = feats
-        setattr(self, feats, slice(None))
-        self._fdict = { feats: slice(None) }
-        self._nfeats = 0
-
-    def add(self, feats, nfeats):
-        sl = slice(self._nfeats, self._nfeats + nfeats)
-        setattr(self, feats, sl)
-        self._fdict.update({ feats: sl })
-        self._nfeats += nfeats
-
-    def X_kwlist(self, X):
-        return [ { k: x[v] for k, v in self._fdict.iteritems() } for x in X ]
 
 class FactorGraph(object):
     def __init__(self):
         self.graph = Graph(directed=False)
         self.variables = []
         self.factors = []
+        self.features = []
+        self.parameters = []
         self.logZ = None
 
         self._feats = None
-        self._fdesc = None
         self._params = None
-
-        self.make_done = False
 
 # properties
         self.vp_type = self.graph.new_vertex_property("string")
@@ -75,58 +59,101 @@ class FactorGraph(object):
     def values(self):
         return [ self.vp_node[v].value for v in self.variables ]
 
-    @property
-    def vdict(self):
-        return { v.name: v.domain for v in self.variables }
+    @values.setter
+    def values(self, value):
+        if value is None:
+            for v in self.variables:
+                self.vp_node[v].value = None
+        elif isinstance(value, dict):
+            for k, v in value.iteritems():
+                vertices = find_vertex(self.graph, self.vp_name, k)
+                if len(vertices) is 1:
+                    self.vp_node[vertices[0]].value = v
+                elif len(vertices) > 1:
+                    raise Exception('This should not happen.')
+        else:
+            raise NotImplementedError('values.setter with object type {} not defined.').format(type(value))
+
+    def vdict(self, variables=None):
+        """ returns a dictionary with 'variable' -> 'domain' mappings """
+        if variables is None:
+            return { self.vp_node[v].name: self.vp_node[v].domain for v in self.variables }
+        return { v.name: v.domain for v in variables }
 
     def add(self, cls, *args, **kwargs):
-        if self.make_done:
-            raise Exception('MakeGraph is already done')
+        if issubclass(cls, Node):
+            vertex = self.graph.add_vertex()
 
-        vertex = self.graph.add_vertex()
-        if not issubclass(cls, Node):
-            raise Exception('what are you doing..')
+            c = cls(self, vertex, *args, **kwargs)
+            self.vp_node[vertex] = c
+            self.vp_name[vertex] = c.name
 
-        c = cls(self, vertex, *args, **kwargs)
-        self.vp_node[vertex] = c
-        self.vp_name[vertex] = c.name
-
-        if issubclass(cls, Variable):
-            self.vp_type[vertex] = "variable"
-            self.vp_shape[vertex] = "circle"
-            self.vp_color[vertex] = "white"
-            self.vp_size[vertex] = 50
+            if issubclass(cls, Variable):
+                self.vp_type[vertex] = 'variable'
+                self.vp_shape[vertex] = 'circle'
+                self.vp_color[vertex] = 'white'
+                self.vp_size[vertex] = 50
 
 # variable-specific properties
-            self.vp_arity[vertex] = c.arity
-            self.variables.append(vertex)
-        else:
-            self.vp_type[vertex] = "factor"
-            self.vp_shape[vertex] = "square"
-            self.vp_color[vertex] = "black"
-            self.vp_size[vertex] = 30
+                self.vp_arity[vertex] = c.arity
+                self.variables.append(vertex)
+            elif issubclass(cls, Factor):
+                self.vp_type[vertex] = 'factor'
+                self.vp_shape[vertex] = 'square'
+                self.vp_color[vertex] = 'black'
+                self.vp_size[vertex] = 30
 
 # factor-specific properties
-            self.vp_table_inputs[vertex] = [ self.vp_name[variable.vertex] for variable in c.variables ]
-            self.factors.append(vertex)
+                self.vp_table_inputs[vertex] = [ self.vp_name[variable.vertex] for variable in c.variables ]
+                self.factors.append(vertex)
 
 # adding all edges of this factor
-            for variable in c.variables:
-                self.graph.add_edge(vertex, variable.vertex)
+                for variable in c.variables:
+                    self.graph.add_edge(vertex, variable.vertex)
+        elif issubclass(cls, Feats):
+            c = cls(*args, **kwargs)
+            self.features.append(c)
+        elif issubclass(cls, Params):
+            c = cls(*args, **kwargs)
+            self.parameters.append(c)
+        else:
+            raise Exception('what are you doing..')
 
         return c
 
-    def make(self, done=False):
-        if done:
-            self.params = np.empty(ParamFactor.nparams)
+    def make(self):
+        self.feats = np.empty(Feats.nfeats)
+        for f in self.features:
+            f.make(self.feats)
+            logger.info('Feat %s: %s (nfeats: %s)', f.name, f.fslice, f.nfeats)
 
-            for f in self.factors:
-                self.vp_node[f].make(self.feats, self.params)
-        else:
-            pass
-# TODO set other variables
-        self.make_done = done
+        self.params = np.empty(Params.nparams)
+        for p in self.parameters:
+            p.make(self.params)
+            logger.info('Param %s: %s (nparams: %s)', p.name, p.pslice, p.nparams)
 
+        for f in self.factors:
+            self.vp_node[f].make()
+
+    # def make(self, feats=False, params=False, graph=False):
+    #     if feats:
+    #         self.feats = np.empty(Feats.nfeats)
+    #         for f in self.features:
+    #             f.make(self.feats)
+    #             logger.info('Feat %s: %s (nfeats: %s)', f.name, f.fslice, f.nfeats)
+    #     if params:
+    #         self.params = np.empty(Params.nparams)
+    #         for p in self.parameters:
+    #             p.make(self.params)
+    #             logger.info('Param %s: %s (nparams: %s)', p.name, p.pslice, p.nparams)
+    #     if graph:
+    #         # self.feats = np.empty(Feats.nfeats)
+    #         # self.params = np.empty(Params.nparams)
+
+# # probably not necessary anymore
+    #         for f in self.factors:
+    #             self.vp_node[f].make()
+    
     def plot(self):
         graph_draw(
             self.graph,
@@ -136,21 +163,6 @@ class FactorGraph(object):
             vertex_fill_color=self.vp_color,
             vertex_size=self.vp_size
         )
-
-    def set_values(self, clear=False, **kwargs):
-        if clear:
-            self.clear_values()
-        for key, value in kwargs.iteritems():
-            vertices = find_vertex(self.graph, self.vp_name, key)
-            if len(vertices) == 1:
-                v = vertices[0]
-                self.vp_node[v].value = value
-            elif len(vertices) > 1:
-                raise Exception('This should not happen.')
-
-    def clear_values(self):
-        for v in self.variables:
-            self.vp_node[v].value = None
 
     # def clear_msgs(self):
     #     for e in self.graph.edges():
@@ -306,6 +318,11 @@ class FactorGraph(object):
             print ' * arity: {}'.format(self.vp_arity[v])
 
     def pr(self, vertex, with_log_norm=False):
+# # TODO OH NO!!!! recursion!!!
+# TODO write a "message passing" function, which runs the algorithm, detects when it is time to run it, etc....
+# TODO factorize!!
+#         algo.message_passing(self, 'sum-product')
+
         s_vtype = self.vp_type[vertex]
         if s_vtype == 'variable':
             e = vertex.out_edges().next()
@@ -326,55 +343,53 @@ class FactorGraph(object):
         else:
             raise Exception('variable type error: {}'.format(s_vtype))
 
-        logger.debug('pr: %s'.format(pr))
         pr /= prs
-        logger.debug('pr: %s'.format(pr))
         return (pr, lnc) if with_log_norm else pr
 
     def max(self):
+        algo.log_messages(self, ('max-product',))
+
         v = self.variables[0]
         e = v.out_edges().next()
-        vf_nc = math.exp(self.ep_mp_msg_vf_lnc[e])
-        fv_nc = math.exp(self.ep_mp_msg_fv_lnc[e])
-        return vf_nc * fv_nc * ( self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e] ).max()
-        # return ( vf_nc * self.ep_mp_msg_vf[e] * fv_nc * self.ep_mp_msg_fv[e] ).max()
+        vf_lnc = self.ep_mp_msg_vf_lnc[e]
+        fv_lnc = self.ep_mp_msg_fv_lnc[e]
+        return math.exp(vf_lnc + fv_lnc) * ( self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e] ).max()
 
     def argmax(self):
-        return [
-            ( self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e] ).argmax() for e in self.iter_first_edge()
-        ]
+        algo.log_messages(self, ('max-product',))
+        return [ ( self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e] ).argmax() for e in self.iter_first_edge() ]
 
     def iter_first_edge(self):
         for v in self.variables:
             yield v.out_edges().next()
 
-    @property
-    def feats(self):
-        return self._feats
+    # @property
+    # def feats(self):
+    #     return self._feats
 
-    @property
-    def fdesc(self):
-        return self._fdesc
+    # @property
+    # def fdesc(self):
+    #     return self._fdesc
 
-    @feats.setter
-    def feats(self, value):
-        if isinstance(value, Feats):
-            self._fdesc = value
-            self._feats = np.empty(value._nfeats)
-        elif isinstance(value, np.ndarray):
-            if self.nfeats == value.size:
-                self._feats[:] = value.ravel()
-            else:
-                self._feats = value.ravel()
-        else:
-            raise NotImplementedError('feats.setter with object type {} not defined.'.format(type(value)))
+    # @feats.setter
+    # def feats(self, value):
+    #     if isinstance(value, Feats):
+    #         self._fdesc = value
+    #         self._feats = np.empty(value._nfeats)
+    #     elif isinstance(value, np.ndarray):
+    #         if self.nfeats == value.size:
+    #             self._feats[:] = value.ravel()
+    #         else:
+    #             self._feats = value.ravel()
+    #     else:
+    #         raise NotImplementedError('feats.setter with object type {} not defined.'.format(type(value)))
 
-    @property
-    def nfeats(self):
-        if isinstance(self._feats, np.ndarray):
-            return self._feats.size
-        else:
-            return None
+    # @property
+    # def nfeats(self):
+    #     if isinstance(self._feats, np.ndarray):
+    #         return self._feats.size
+    #     else:
+    #         return None
 
     # @nfeats.setter
     # def nfeats(self, value):
@@ -382,6 +397,26 @@ class FactorGraph(object):
     #         self.feats = np.empty(value)
     #     else:
     #         raise Exception('nfeats.setter with object type {} not defined.').format(type(value))
+
+    @property
+    def feats(self):
+        return self._feats
+    
+    @feats.setter
+    def feats(self, value):
+        if isinstance(value, np.ndarray):
+            if self.nfeats == value.size:
+                self._feats[:] = value.ravel()
+            else:
+                self._feats = value.ravel()
+        else:
+            raise NotImplementedError('feats.setter with object type {} not defined.').format(type(value))
+
+    @property
+    def nfeats(self):
+        if isinstance(self._feats, np.ndarray):
+            return self._feats.size
+        return None
 
     @property
     def params(self):
@@ -403,8 +438,7 @@ class FactorGraph(object):
     def nparams(self):
         if isinstance(self._params, np.ndarray):
             return self._params.size
-        else:
-            return None
+        return None
     
     def l(self):
         return np.prod([ self.vp_node[f].value() for f in self.factors ])
@@ -413,22 +447,13 @@ class FactorGraph(object):
         if params is not None:
             self.params = params
 
-        if 'X_kwlist' not in data:
-            data['X_kwlist'] = self.fdesc.X_kwlist(data['X'])
-
         vit = []
         for x in data['X']:
-            self.clear_values()
+            self.values = None
             self.feats = x
             for f in self.factors:
-                self.vp_node[f].make_table(x_kw=x_kw, y_kw=None)
-            # for f in self.factors:
-            #     self.vp_node[f].make_table(phi=x, y_kw=None)
-
-            # self.clear_msgs()
-            message_passing(self, 'max-product')
-            # self.message_passing()
-
+                self.vp_node[f].make_table()
+            algo.message_passing(self, 'max-product')
             vit.append(self.argmax())
 
         return vit
@@ -440,36 +465,33 @@ class FactorGraph(object):
             # return -np.log([ self.vp_node[f].l() for f in self.factors ]).sum()
             return self.logZ - np.log(self.l())
 
-        if 'X_kw' not in data:
-            data['X_kw'] = self.fdesc.X_kwlist(data['X'])
-
         logger.debug('Computing NLL')
 
         if params is not None:
             self.params = params
 
+# TODO implement later today
+        Feats.extend(data)
+
         X, Y = data['X'], data['Y']
-        X_kwlist = data['X_kwlist']
         Y_kwlist = data['Y_kwlist']
         
         ndata = X.shape[0]
 
         nll = np.empty(ndata)
         logger.debug('Allocating nll array with shape %s', nll.shape)
-        for i, x, y, x_kw, y_kw in itt.izip(itt.count(), X, Y, X_kwlist, Y_kwlist):
-            self.set_values(clear=True, **y_kw)
+        for i, x, y, y_kw in itt.izip(itt.count(), X, Y, Y_kwlist):
             self.feats = x
+            self.values = None
+            self.values = y_kw
 
             for f in self.factors:
-                self.vp_node[f].make_table(x_kw=x_kw, y_kw=y_kw)
-                # self.vp_node[f].make_table(phi=x, y_kw=y_kw)
+                self.vp_node[f].make_table()
 
-            # self.clear_msgs()
-            # self.message_passing()
-            message_passing(self, 'sum-product')
+            algo.message_passing(self, 'sum-product')
 
             nll[i] = self.nll()
-        logger.debug('NLL DONE: %s', nll.shape)
+        logger.debug('NLL DONE: %s', nll.sum())
         return nll
 
     def dnll(self, data = None, params = None):
@@ -477,65 +499,56 @@ class FactorGraph(object):
 # Assume data is already set, 
             return np.array([ self.vp_node[f].gradient() for f in self.factors ]).sum(axis=0)
 
-        if 'X_kwlist' not in data:
-            data['X_kwlist'] = self.fdesc.X_kwlist(data['X'])
-
         logger.debug('Computing DNLL')
 
         if params is not None:
             self.params = params
 
+# TODO implement later today
+        Feats.extend(data)
+
         X, Y = data['X'], data['Y']
-        X_kwlist = data['X_kwlist']
         Y_kwlist = data['Y_kwlist']
         
         ndata = X.shape[0]
 
         dnll = np.empty((ndata, self.nparams))
         logger.debug('Allocating dnll array with shape %s', dnll.shape)
-        for i, x, y, x_kw, y_kw in itt.izip(itt.count(), X, Y, X_kwlist, Y_kwlist):
-            self.set_values(clear=True, **y_kw)
-
+        for i, x, y, y_kw in itt.izip(itt.count(), X, Y, Y_kwlist):
+            self.feats = x
+            self.values = None
+            self.values = y_kw
             for f in self.factors:
-                self.vp_node[f].make_table(x_kw=x_kw, y_kw=y_kw)
-
-            # self.clear_msgs()
-            # self.message_passing()
-            message_passing(self, 'sum-product')
+                self.vp_node[f].make_table()
+            algo.message_passing(self, 'sum-product')
 
             dnll[i] = self.dnll()
         logger.debug('DNLL DONE: %s', dnll.shape)
 
         return dnll
 
-    # def initFactorDims(self, data):
-    #     nfeats = data['X'].shape[1]
-    #     for f in self.factors:
-    #         self.vp_node[f].nfeats = nfeats
-
     def train(self, data):
-        # self.initFactorDims(data)
         self.params = 'random'
 
-        def fun(params):
+        def fun(params, data):
             cost = self.nll(data = data, params = params).sum() 
             reg = 1. * la.norm(params, ord=1)
-            logger.debug('fun cost: %s', cost)
-            logger.debug('fun reg:  %s', reg)
+            logger.debug('Objectve Function: %s ( %s + %s )', cost+reg, cost, reg)
             return cost + reg
 
-        def jac(params):
+        def jac(params, data):
             dcost = self.dnll(data = data, params = params).sum(axis=0)
             dreg = 1. * np.sign(params)
-            logger.debug('jac dcost: (shape %s) %s', dcost.shape, dcost)
-            logger.debug('jac dreg:  (shape %s) %s', dreg.shape, dreg)
+            logger.debug('Objectve Jacobian: %s ( %s + %s )', dcost+dreg, dcost, dreg)
             return dcost + dreg
 
         logger.info('BEGIN Optimization')
         res = opt.minimize(
-            fun      = fun,
-            x0       = self.params,
-            jac      = jac,
+            fun  = fun,
+            x0   = self.params,
+            # method='nelder-mead',
+            jac  = jac,
+            args = (data,)
         )
         logger.info('END Optimization')
         logger.info('Training result: %s', res)

@@ -47,6 +47,7 @@ def message_passing(fgraph, *args):
             fgraph.ep_mp_msg_vf_lnc[e] = -np.inf
     
     logger.debug('I will traverse the edges in this order:')
+
     for e in reversed(edges):
         logger.debug(' - %s -> %s', fgraph.vp_name[e.target()], fgraph.vp_name[e.source()])
     for e in edges:
@@ -60,14 +61,87 @@ def message_passing(fgraph, *args):
     for e in edges:
         _pass_msg(fgraph, e, e.source(), e.target(), which)
 
-    _, fgraph.logZ = fgraph.pr(fgraph.variables[0], with_log_norm=True)
-    logger.debug('logZ: %s', fgraph.logZ)
+    log_messages(fgraph, which)
+
+    if 'sum-product' in which:
+        _, fgraph.logZ = fgraph.pr(fgraph.variables[0], with_log_norm=True)
+        logger.debug('logZ: %s', fgraph.logZ)
+
+def log_messages(fgraph, which):
+    logger.debug('Number of Edges: %s', len([ e for e in fgraph.graph.edges()]))
+    logger.debug(' Current state of messages:')
+    for w in which:
+        for e in fgraph.graph.edges():
+            s, t = e.source(), e.target()
+            snode = fgraph.vp_node[s]
+            tnode = fgraph.vp_node[t]
+
+            if fgraph.vp_type[s] == 'variable':
+                if w == 'sum-product':
+                    msg = fgraph.ep_sp_msg_vf[e]
+                if w == 'max-product':
+                    msg = fgraph.ep_mp_msg_vf[e]
+            else:
+                if w == 'sum-product':
+                    msg = fgraph.ep_sp_msg_fv[e]
+                if w == 'max-product':
+                    msg = fgraph.ep_mp_msg_fv[e]
+
+            logger.debug(' %s.msg %s -> %s: %s', w, snode, tnode, str(msg))
+
+            if fgraph.vp_type[s] == 'variable':
+                if w == 'sum-product':
+                    msg = fgraph.ep_sp_msg_fv[e]
+                if w == 'max-product':
+                    msg = fgraph.ep_mp_msg_fv[e]
+            else:
+                if w == 'sum-product':
+                    msg = fgraph.ep_sp_msg_vf[e]
+                if w == 'max-product':
+                    msg = fgraph.ep_mp_msg_vf[e]
+
+            logger.debug(' %s.msg %s -> %s: %s', w, tnode, snode, str(msg))
 
 def _pass_msg(fgraph, e, s, t, which):
+    log_messages(fgraph, which)
+
+#     logger.debug(' === separator === ')
+#     for w in which:
+#         for ee in fgraph.graph.edges():
+#             ss, tt = ee.source(), ee.target()
+#             snode = fgraph.vp_node[ss]
+#             tnode = fgraph.vp_node[tt]
+
+#             if fgraph.vp_type[ss] == 'variable':
+#                 if w == 'sum-product':
+#                     msg = fgraph.ep_sp_msg_vf[ee]
+#                 if w == 'max-product':
+#                     msg = fgraph.ep_mp_msg_vf[ee]
+#             else:
+#                 if w == 'sum-product':
+#                     msg = fgraph.ep_sp_msg_fv[ee]
+#                 if w == 'max-product':
+#                     msg = fgraph.ep_mp_msg_fv[ee]
+
+#             logger.debug(' %s.msg %s -> %s: %s', w, snode, tnode, str(msg))
+
+#             if fgraph.vp_type[ss] == 'variable':
+#                 if w == 'sum-product':
+#                     msg = fgraph.ep_sp_msg_fv[ee]
+#                 if w == 'max-product':
+#                     msg = fgraph.ep_mp_msg_fv[ee]
+#             else:
+#                 if w == 'sum-product':
+#                     msg = fgraph.ep_sp_msg_vf[ee]
+#                 if w == 'max-product':
+#                     msg = fgraph.ep_mp_msg_vf[ee]
+
+#             logger.debug(' %s.msg %s -> %s: %s', w, tnode, snode, str(msg))
+
     snode = fgraph.vp_node[s]
     tnode = fgraph.vp_node[t]
     logger.debug('passing %s -> %s', snode, tnode)
-    logger.debug('passing %s -> %s', s, t)
+    # logger.debug('passing %s -> %s', s, t)
 
     s_vtype = fgraph.vp_type[s]
     if s_vtype == 'variable':
@@ -75,8 +149,7 @@ def _pass_msg(fgraph, e, s, t, which):
         sp_msg, sp_msg_lnc = np.ones(arity), 0
         mp_msg, mp_msg_lnc = np.ones(arity), 0
 
-        neighbours = list(s.out_neighbours())
-        for neigh in filter(lambda neigh: neigh != t, neighbours):
+        for neigh in filter(lambda neigh: neigh != t, s.out_neighbours()):
             neigh_edge = fgraph.graph.edge(neigh, s)
             logger.debug('   -------')
             if 'sum-product' in which:
@@ -86,7 +159,7 @@ def _pass_msg(fgraph, e, s, t, which):
                 logger.debug(' * sp_in_msg:     %s', sp_in_msg)
                 logger.debug(' * sp_in_msg_lnc: %s', sp_in_msg_lnc)
 
-                sp_msg    *= sp_in_msg
+                sp_msg     *= sp_in_msg
                 sp_msg_lnc += sp_in_msg_lnc
             if 'max-product' in which:
                 mp_in_msg = fgraph.ep_mp_msg_fv[neigh_edge]
@@ -95,7 +168,7 @@ def _pass_msg(fgraph, e, s, t, which):
                 logger.debug(' * mp_in_msg:     %s', mp_in_msg)
                 logger.debug(' * mp_in_msg_lnc: %s', mp_in_msg_lnc)
 
-                mp_msg    *= mp_in_msg
+                mp_msg     *= mp_in_msg
                 mp_msg_lnc += mp_in_msg_lnc
 
         if 'sum-product' in which:
@@ -131,9 +204,7 @@ def _pass_msg(fgraph, e, s, t, which):
         # logger.debug(' * in_msg:    %s', msgs[nname])
         # logger.debug(' * in_msg_lnc: %s', msg_lnc)
 
-        neighbours = list(s.out_neighbours())
-        # neighbours.remove(t)
-        for neigh in filter(lambda neigh: neigh != t, neighbours):
+        for neigh in filter(lambda neigh: neigh != t, s.out_neighbours()):
             nname = fgraph.vp_name[neigh]
             neigh_edge = fgraph.graph.edge(neigh, s)
             if 'sum-product' in which:
@@ -169,8 +240,7 @@ def _pass_msg(fgraph, e, s, t, which):
             prod['max-product'] = fgraph.vp_table[s] * reduce(np.multiply, np.ix_(*msgs['max-product']))
 
         axis = fgraph.vp_table_inputs[s].index(fgraph.vp_name[t])
-        # negaxis = tuple(filter(lambda a: a!= axis, range(len(neighbours))))
-        negaxis = tuple( a for a in xrange(len(neighbours)) if a != axis )
+        negaxis = tuple( a for a in xrange(len(fgraph.vp_table[s].shape)) if a != axis )
 
         if 'sum-product' in which:
             sp_msg = prod['sum-product'].sum(axis = negaxis)
