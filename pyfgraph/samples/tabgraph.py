@@ -1,14 +1,17 @@
 from pyfgraph.fgraph import FactorGraph
 from pyfgraph.nodes import Variable, TabFactor
 from pyfgraph.algo import message_passing
-import pyfgraph.utils.log as log
+import logging
 
 def simple_tabgraph():
     fg = FactorGraph()
 
-    V1 = fg.add(Variable, 'V1', arity=2)
-    V2 = fg.add(Variable, 'V2', arity=2)
-    V3 = fg.add(Variable, 'V3', arity=2)
+    # V1 = fg.add(Variable, 'V1', domain=2)
+    # V2 = fg.add(Variable, 'V2', domain=2)
+    # V3 = fg.add(Variable, 'V3', domain=2)
+    V1 = fg.add(Variable, 'V1', domain=['This', 'Shitty'])
+    V2 = fg.add(Variable, 'V2', domain=['Code', 'Breaks'])
+    V3 = fg.add(Variable, 'V3', domain=['All The', 'Rules'])
 
     F1 = fg.add(TabFactor, 'F1', V1          )
     F2 = fg.add(TabFactor, 'F2', (V1, V2)    )
@@ -29,7 +32,13 @@ def simple_tabgraph():
     return fg
 
 if __name__ == '__main__':
-    log.setup_file_logger('log.tabgraph.log')
+    fmt = '%(levelname)s @%(lineno)d:%(filename)s - %(funcName)s(): %(message)s'
+    fmt = '%(asctime)s %(levelname)s @%(lineno)d:%(filename)s - %(funcName)s(): %(message)s'
+    logging.basicConfig(filename='log.featgraph.log',
+                        filemode='w',
+                        format=fmt,
+                        level=logging.DEBUG)
+
     fg = simple_tabgraph()
     message_passing(fg, 'max-product', 'sum-product')
 

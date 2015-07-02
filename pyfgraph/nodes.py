@@ -20,11 +20,52 @@ class Node(object):
         return self.name
 
 class Variable(Node):
-    def __init__(self, graph, vertex, name, arity):
+    def __init__(self, graph, vertex, name, domain):
         super(Variable, self).__init__(graph, vertex, name)
-        self.arity = arity
-        self.domain = np.arange(arity)
-        self.value = None
+        if isinstance(domain, int):
+            domain = range(domain)
+        self.domain = domain
+        self.arity = len(domain)
+        self.idomain = np.arange(self.arity)
+
+        self.v2iv = dict(zip(self.domain, self.idomain))
+        self.iv2v = dict(zip(self.idomain, self.domain))
+
+        logger.info('Variable %s', self.name)
+        logger.info(' - domain: %s', self.domain)
+        logger.info(' - idomain: %s', self.idomain)
+        logger.info(' - v2iv: %s', self.v2iv)
+        logger.info(' - iv2v: %s', self.iv2v)
+
+        self._value = None
+        self._ivalue = None
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        if value is None:
+            self._value = None
+            self._ivalue = None
+        else:
+            self._value = value
+            self._ivalue = self.v2iv[value]
+
+    @property
+    def ivalue(self):
+        return self._ivalue
+
+    @ivalue.setter
+    def ivalue(self, ivalue):
+        if ivalue is None:
+            self._ivalue = None
+            self._value = None
+        else:
+            print 'setting ivalue {} (value {})'.format(ivalue, self.iv2v[ivalue])
+            self._ivalue = ivalue
+            self._value = self.iv2v[ivalue]
 
 class Factor(Node):
     def __init__(self, graph, vertex, name, variables, feats=None, params=None):
@@ -44,11 +85,10 @@ class Factor(Node):
         if self.table is None:
             raise Exception
         if idx is None:
-            idx = tuple( v.value for v in self.variables )
+            idx = tuple( v.ivalue for v in self.variables )
 
         value = self.table[idx]
-        logger.debug('%s.value(): %s', self.name, value)
-        return self.table[idx]
+        return value
 
     def set(self, *args, **kwargs):
         logger.error('Factor.set() is an interface and is not implemented yet.')
@@ -78,6 +118,8 @@ class TabFactor(Factor):
     @table.setter
     def table(self, value):
         if isinstance(value, (int, long, float)):
+            if self._table is None:
+                self._table = np.empty(self.arity)
             self._table.fill(value)
         elif isinstance(value, list):
             self._table = np.array(value)
@@ -91,6 +133,9 @@ class TabFactor(Factor):
 
     def make_table(self):
         pass
+
+    def gradient(self):
+        return np.zeros(Params.nparams)
 
 class FeatFactor(Factor):
     def __init__(self, graph, vertex, name, variables, feats = None, params = None):
@@ -107,7 +152,6 @@ class FeatFactor(Factor):
 
     def make_table(self):
 # set/make table
-
         # print 'feats:', self.feats.feats
         # print 'params_tab', self.params_tab
         self.nl_table = np.dot(self.params_tab, self.feats.feats)
@@ -115,7 +159,7 @@ class FeatFactor(Factor):
         self.table = np.exp(-self.nl_table)
 
     def gradient(self):
-        idx = tuple( v.value for v in self.variables )
+        idx = tuple( v.ivalue for v in self.variables )
         pr = self.graph.pr(self.vertex)
 
         ttable = np.zeros(self.arity)
@@ -163,20 +207,23 @@ class FunFactor(Factor):
 
     def make_table(self):
 # make/set features
-        kwargs = { '_graph': self.graph }
-        kwargs.update({ feat.name: feat.feats for feat in self.graph.features })
+        kwargs = { feat.name: feat.feats for feat in self.graph.features }
 # update with variable values
-        # print kwargs
         vdict = self.graph.vdict(self.variables)
-        self.funfeats = np.array([ self.fun(_values = prodict.values(), **dict(kwargs, **prodict)) for prodict in proditer(**vdict) ])
+        self.funfeats = np.array([
+            self.fun(  _values = np.array(prodict.values()),
+                        **dict(kwargs, **prodict)) for prodict in proditer(**vdict)
+        ])
         self.funfeats.shape = self.arity + (-1,)
 
 # make/set table
+        logger.debug('%s.make_table() - self.funfeats: %s', self.name, str(self.funfeats))
         self.nl_table = np.dot(self.funfeats, self.params.params)
+        logger.debug('%s.make_table() - nl_table: %s', self.name, str(self.nl_table))
         self.table = np.exp(-self.nl_table)
         
     def gradient(self):
-        idx = tuple( v.value for v in self.variables)
+        idx = tuple( v.ivalue for v in self.variables)
         pr = self.graph.pr(self.vertex)
 
         g = np.zeros(Params.nparams)
