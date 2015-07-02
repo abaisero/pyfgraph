@@ -12,9 +12,9 @@ def simple_featgraph():
     def make_data(n):
         X = rnd.randn(n, 2)
         Y = np.array([ [ x[0]>=0, x[1]>=0, x[0]>=x[1] ] for x in X ], dtype=int)
-        Y = np.array([ [ 'RIGHT' if x[0]>=0    else 'LEFT',
-                         'TOP'   if x[1]>=0    else 'BOTTOM',
-                         'BL'    if x[0]>=x[1] else 'TR' ] for x in X ])
+        # Y = np.array([ [ 'RIGHT' if x[0]>=0    else 'LEFT',
+        #                  'TOP'   if x[1]>=0    else 'BOTTOM',
+        #                  'BL'    if x[0]>=x[1] else 'TR' ] for x in X ])
         return { 'X': X, 'Y': Y }
 
     fg = FactorGraph()

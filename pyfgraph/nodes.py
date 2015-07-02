@@ -76,6 +76,7 @@ class Factor(Node):
 
         self.arity = tuple( v.arity for v in self.variables )
         self.table = None
+        self.nl_table = None
 
     @property
     def nvariables(self):
@@ -89,6 +90,15 @@ class Factor(Node):
 
         value = self.table[idx]
         return value
+
+    def nl_value(self, idx = None):
+        if self.nl_table is None:
+            raise Exception
+        if idx is None:
+            idx = tuple( v.ivalue for v in self.variables )
+
+        nl_value = self.nl_table[idx]
+        return nl_value
 
     def set(self, *args, **kwargs):
         logger.error('Factor.set() is an interface and is not implemented yet.')
@@ -127,6 +137,7 @@ class TabFactor(Factor):
             self._table = value
         else:
             NotImplementedError('{}.table.setter() failed with type(table) = {}'.format(self.name, type(value)))
+        self.nl_table = np.log(self.table)
 
     def make(self):
         pass

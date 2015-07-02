@@ -291,9 +291,6 @@ class FactorGraph(object):
             return self._params.size
         return None
     
-    def l(self):
-        return np.prod([ self.vp_node[f].value() for f in self.factors ])
-
     def viterbi(self, data = None, params = None):
         if params is not None:
             self.params = params
@@ -310,11 +307,14 @@ class FactorGraph(object):
         return vit
 
     def nll(self, data = None, params = None):
-# TODO fix the following as well? it might have the same bug as the dnll case
         if data is None:
 # Assume data is already set, 
             # return -np.log([ self.vp_node[f].l() for f in self.factors ]).sum()
-            return self.logZ - np.log(self.l())
+            logZ = self.logZ
+            nll = np.sum( self.vp_node[f].nl_value() for f in self.factors )
+            logger.debug('logZ: %s', self.logZ)
+            logger.debug('nll: %s', nll)
+            return self.logZ + nll
 
         if params is not None:
             self.params = params
