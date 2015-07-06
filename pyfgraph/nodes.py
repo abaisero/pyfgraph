@@ -82,14 +82,14 @@ class Factor(Node):
     def nvariables(self):
         return len(self.variables)
 
-    def value(self, idx = None):
-        if self.table is None:
-            raise Exception
-        if idx is None:
-            idx = tuple( v.ivalue for v in self.variables )
+    # def value(self, idx = None):
+    #     if self.table is None:
+    #         raise Exception
+    #     if idx is None:
+    #         idx = tuple( v.ivalue for v in self.variables )
 
-        value = self.table[idx]
-        return value
+    #     value = self.table[idx]
+    #     return value
 
     def nl_value(self, idx = None):
         if self.nl_table is None:
@@ -163,11 +163,9 @@ class FeatFactor(Factor):
 
     def make_table(self):
 # set/make table
-        # print 'feats:', self.feats.feats
-        # print 'params_tab', self.params_tab
         self.nl_table = np.dot(self.params_tab, self.feats.feats)
-        # print 'nl_table', self.nl_table
-        self.table = np.exp(-self.nl_table)
+        self.table = np.exp(-np.clip(self.nl_table, -700, 700))
+        # self.table = np.exp(-self.nl_table)
 
     def gradient(self):
         idx = tuple( v.ivalue for v in self.variables )
@@ -231,7 +229,8 @@ class FunFactor(Factor):
         logger.debug('%s.make_table() - self.funfeats: %s', self.name, str(self.funfeats))
         self.nl_table = np.dot(self.funfeats, self.params.params)
         logger.debug('%s.make_table() - nl_table: %s', self.name, str(self.nl_table))
-        self.table = np.exp(-self.nl_table)
+        self.table = np.exp(-np.clip(self.nl_table, -700, 700))
+        # self.table = np.exp(-self.nl_table)
         
     def gradient(self):
         idx = tuple( v.ivalue for v in self.variables)

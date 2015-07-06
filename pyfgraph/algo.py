@@ -1,10 +1,12 @@
 import math
 import numpy as np
+from scipy.misc import logsumexp
 
 import logging
 logger = logging.getLogger(__name__)
 
 import pyfgraph.utils.log as log
+
 
 def message_passing(fgraph, *args):
     # logger.debug('message_passing args %s', args)
@@ -30,6 +32,7 @@ def message_passing(fgraph, *args):
 # initialize tables
     for f in fgraph.factors:
         fgraph.vp_table[f] = fgraph.vp_node[f].table
+        fgraph.vp_nl_table[f] = fgraph.vp_node[f].nl_table
 
 # initialize messages
     for e in fgraph.graph.edges():
@@ -164,6 +167,7 @@ def _pass_msg(fgraph, e, s, t, which):
         # logger.debug(' * factor: %s', fgraph.vp_table[s])
 
         prod = {}
+# TODO change into vp_nl_table
         if 'sum-product' in which:
             prod['sum-product'] = fgraph.vp_table[s] * reduce(np.multiply, np.ix_(*msgs['sum-product']))
         if 'max-product' in which:

@@ -43,6 +43,7 @@ class FactorGraph(object):
         self.vp_size = self.graph.new_vertex_property("int")
         self.vp_arity = self.graph.new_vertex_property("int")
         self.vp_table = self.graph.new_vertex_property("object")
+        self.vp_nl_table = self.graph.new_vertex_property("object")
         self.vp_table_inputs = self.graph.new_vertex_property("object")
 
         self.vp_node = self.graph.new_vertex_property("object")
