@@ -37,14 +37,16 @@ def simple_fungraph():
     F_ = fg.add(FunFactor, 'F_', (V1, V2, V3), feats = feats)
 
     F1.fun = lambda feats, V1:          feats * (V1 == 'RIGHT')
-    F2.fun = lambda feats, V2:          feats * (V2 == ''
+    F2.fun = lambda feats, V2:          feats * (V2 == '')
     F3.fun = lambda feats, V3:          feats * V3
     F_.fun = lambda feats, V1, V2, V3:  feats * (V1+V2+V3)
 
     F1.fun = lambda feats, V1:          feats * (V1 == 'RIGHT')
-    F2.fun = lambda feats, V2:          feats * (V2 == ''
+    F2.fun = lambda feats, V2:          feats * (V2 == '')
     F3.fun = lambda feats, V3:          feats * V3
     F_.fun = lambda feats, V1, V2, V3:  feats * (V1+V2+V3)
+
+    # TODO alternatively: lambda s: s.feats * (s.V1 == 'RIGHT')
 
     fg.make()
     return fg, make_data

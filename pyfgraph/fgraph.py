@@ -292,12 +292,7 @@ class FactorGraph(object):
     def nll(self, data = None, params = None):
         if data is None:
 # Assume data is already set, 
-            # return -np.log([ self.vp_node[f].l() for f in self.factors ]).sum()
-            logZ = self.logZ
-            nll = - np.sum( self.vp_node[f].log_value() for f in self.factors )
-            logger.debug('logZ: %s', self.logZ)
-            logger.debug('nll:  %s', nll)
-            return self.logZ + nll
+            return self.logZ - np.sum( self.vp_node[f].log_value() for f in self.factors )
 
         if params is not None:
             self.params = params
@@ -353,7 +348,7 @@ class FactorGraph(object):
 
         def fun(params, data):
             cost = self.nll(data = data, params = params).sum() 
-            reg = 10. * la.norm(params, ord=1)
+            reg = 1. * la.norm(params, ord=1)
             f = cost+reg
 
             logger.debug('Objective Function: %s ( %s + %s )', f, cost, reg)
@@ -361,7 +356,7 @@ class FactorGraph(object):
 
         def jac(params, data):
             dcost = self.dnll(data = data, params = params).sum(axis=0)
-            dreg = 10. * np.sign(params)
+            dreg = 1. * np.sign(params)
             j = dcost+dreg
 
             logger.debug('Objective Jacobian: %s ( %s + %s )', j, dcost, dreg)
@@ -376,7 +371,6 @@ class FactorGraph(object):
         res = opt.minimize(
             fun  = fun,
             x0   = self.params,
-            # method='nelder-mead',
             jac  = jac,
             args = (data,),
             callback = callback if self.check_gradient else None
@@ -387,6 +381,5 @@ class FactorGraph(object):
         #     raise Exception('Failed to train!')
         self.params = res.x
 
-        if err_grad:
-            return np.array(err_grad)
+        return np.array(err_grad) if err_grad else None
 
