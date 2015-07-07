@@ -14,6 +14,7 @@ import math
 import numpy as np
 import numpy.random as rnd
 import numpy.linalg as la
+from scipy.misc import logsumexp
 
 from pyfgraph.parametric import Feats, Params
 from pyfgraph.nodes import Node, Variable, Factor, FeatFactor, FunFactor
@@ -35,6 +36,8 @@ class FactorGraph(object):
         self._feats = None
         self._params = None
 
+        self.check_gradient = False
+
 # properties
         self.vp_type = self.graph.new_vertex_property("string")
         self.vp_name = self.graph.new_vertex_property("string")
@@ -42,21 +45,16 @@ class FactorGraph(object):
         self.vp_color = self.graph.new_vertex_property("string")
         self.vp_size = self.graph.new_vertex_property("int")
         self.vp_arity = self.graph.new_vertex_property("int")
-        self.vp_table = self.graph.new_vertex_property("object")
-        self.vp_nl_table = self.graph.new_vertex_property("object")
+        self.vp_log_table = self.graph.new_vertex_property("object")
         self.vp_table_inputs = self.graph.new_vertex_property("object")
 
         self.vp_node = self.graph.new_vertex_property("object")
 
-        self.ep_sp_msg_fv = self.graph.new_edge_property("object")
-        self.ep_sp_msg_fv_lnc = self.graph.new_edge_property("double")
-        self.ep_sp_msg_vf = self.graph.new_edge_property("object")
-        self.ep_sp_msg_vf_lnc = self.graph.new_edge_property("double")
+        self.ep_sp_log_msg_fv = self.graph.new_edge_property("object")
+        self.ep_sp_log_msg_vf = self.graph.new_edge_property("object")
 
-        self.ep_mp_msg_fv = self.graph.new_edge_property("object")
-        self.ep_mp_msg_fv_lnc = self.graph.new_edge_property("double")
-        self.ep_mp_msg_vf = self.graph.new_edge_property("object")
-        self.ep_mp_msg_vf_lnc = self.graph.new_edge_property("double")
+        self.ep_mp_log_msg_fv = self.graph.new_edge_property("object")
+        self.ep_mp_log_msg_vf = self.graph.new_edge_property("object")
 
     @property
     def nvariables(self):
@@ -176,76 +174,60 @@ class FactorGraph(object):
             vertex_size=self.vp_size
         )
 
-    def check_message_passing(self):
-        print 'Checking the message passing. For each variable, all the rows should be the same.'
-        for v in self.variables:
-            print 'Variable', self.vp_name[v]
-            print np.sum([ self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e]) for e in v.out_edges() ], axis = 0)
-            for e in v.out_edges():
-                msg_vf = self.ep_sp_msg_vf_lnc[e] + np.log(self.ep_sp_msg_vf[e])
-                msg_fv = self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e])
-                print msg_vf + msg_fv
+    # def check_message_passing(self):
+    #     print 'Checking the message passing. For each variable, all the rows should be the same.'
+    #     for v in self.variables:
+    #         print 'Variable', self.vp_name[v]
+    #         print np.sum([ self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e]) for e in v.out_edges() ], axis = 0)
+    #         for e in v.out_edges():
+    #             msg_vf = self.ep_sp_msg_vf_lnc[e] + np.log(self.ep_sp_msg_vf[e])
+    #             msg_fv = self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e])
+    #             print msg_vf + msg_fv
 
-    def write(self):
-        print 'Vertices:'
-        for v in self.graph.vertices():
-            print 'vertex {}'.format(v)
-            print ' * type: {}'.format(self.vp_type[v])
-            print ' * in_degree: {}'.format(v.in_degree())
-            print ' * out_degree: {}'.format(v.out_degree())
-            print ' * table.shape: {}'.format(None if self.vp_table[v] is None else self.vp_table[v].shape)
-            print ' * table_inputs: {}'.format(self.vp_table_inputs[v])
-            print ' * arity: {}'.format(self.vp_arity[v])
+    # def write(self):
+    #     print 'Vertices:'
+    #     for v in self.graph.vertices():
+    #         print 'vertex {}'.format(v)
+    #         print ' * type: {}'.format(self.vp_type[v])
+    #         print ' * in_degree: {}'.format(v.in_degree())
+    #         print ' * out_degree: {}'.format(v.out_degree())
+    #         print ' * table.shape: {}'.format(None if self.vp_table[v] is None else self.vp_table[v].shape)
+    #         print ' * table_inputs: {}'.format(self.vp_table_inputs[v])
+    #         print ' * arity: {}'.format(self.vp_arity[v])
 
-    def pr(self, vertex, with_log_norm=False):
-# # TODO OH NO!!!! recursion!!!
-# TODO write a "message passing" function, which runs the algorithm, detects when it is time to run it, etc....
-# TODO factorize!!
-#         algo.message_passing(self, 'sum-product')
-
+    def log_pr(self, vertex):
+        """ log likelihood, without the normalization constant """
         s_vtype = self.vp_type[vertex]
         if s_vtype == 'variable':
             e = vertex.out_edges().next()
-            pr = self.ep_sp_msg_vf[e] * self.ep_sp_msg_fv[e]
-            prs = pr.sum()
-            lprs = math.log(prs)
-
-            if with_log_norm:
-                lnc = self.ep_sp_msg_vf_lnc[e] + self.ep_sp_msg_fv_lnc[e] + lprs
+            log_pr = self.ep_sp_log_msg_vf[e] + self.ep_sp_log_msg_fv[e]
         elif s_vtype == 'factor':
-            msgs = { self.vp_name[e.target()]: self.ep_sp_msg_vf[e] for e in vertex.out_edges() }
+            msgs = { self.vp_name[e.target()]: self.ep_sp_log_msg_vf[e] for e in vertex.out_edges() }
             msgs = [ msgs[n] for n in self.vp_table_inputs[vertex] ]
-            pr = self.vp_table[vertex] * reduce(np.multiply, np.ix_(*msgs))
-            prs = pr.sum()
-
-            if with_log_norm:
-                lnc = np.array([ self.ep_sp_msg_vf_lnc[e] for e in vertex.out_edges() ]).sum() + lprs
+            log_pr = self.vp_log_table[vertex] + reduce(np.add, np.ix_(*msgs))
         else:
             raise Exception('variable type error: {}'.format(s_vtype))
 
-        pr /= prs
-        return (pr, lnc) if with_log_norm else pr
+        return log_pr
+
+    def pr(self, vertex):
+        """ likelihood, with the normalization constant """
+        log_pr = self.log_pr(vertex)
+        return np.exp(log_pr - self.logZ)
 
     def max(self):
         # log.log_messages(self, ('max-product',))
-
         v = self.variables[0]
         e = v.out_edges().next()
-        vf_lnc = self.ep_mp_msg_vf_lnc[e]
-        fv_lnc = self.ep_mp_msg_fv_lnc[e]
-        return math.exp(vf_lnc + fv_lnc) * ( self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e] ).max()
+        return math.exp(( self.ep_mp_log_msg_vf[e] + self.ep_mp_log_msg_fv[e] ).max())
 
     def argmax(self):
         # log.log_messages(self, ('max-product',))
-        # ivalues = [None] * self.nvariables
         values = [None] * self.nvariables
-
         for i, v in enumerate(self.variables):
             e = v.out_edges().next()
-            ivalue = (self.ep_mp_msg_vf[e] * self.ep_mp_msg_fv[e]).argmax()
-            # ivalues[i] = ivalue
+            ivalue = (self.ep_mp_log_msg_vf[e] + self.ep_mp_log_msg_fv[e]).argmax()
             values[i] = self.vp_node[v].iv2v[ivalue]
-
         return values
 
     @property
@@ -312,16 +294,13 @@ class FactorGraph(object):
 # Assume data is already set, 
             # return -np.log([ self.vp_node[f].l() for f in self.factors ]).sum()
             logZ = self.logZ
-            nll = np.sum( self.vp_node[f].nl_value() for f in self.factors )
+            nll = - np.sum( self.vp_node[f].log_value() for f in self.factors )
             logger.debug('logZ: %s', self.logZ)
-            logger.debug('nll: %s', nll)
+            logger.debug('nll:  %s', nll)
             return self.logZ + nll
 
         if params is not None:
             self.params = params
-
-# TODO implement later today
-        Feats.extend(data)
 
         X, Y = data['X'], data['Y']
 
@@ -350,9 +329,6 @@ class FactorGraph(object):
         if params is not None:
             self.params = params
 
-# TODO implement later today
-        Feats.extend(data)
-
         X, Y = data['X'], data['Y']
         
         ndata = X.shape[0]
@@ -362,6 +338,7 @@ class FactorGraph(object):
             self.feats = x
             self.values = None
             self.values = y
+
             for f in self.factors:
                 self.vp_node[f].make_table()
             # log.log_params(self)
@@ -372,29 +349,28 @@ class FactorGraph(object):
         return dnll
 
     def train(self, data):
-        # if 'Y_kwlist' not in data:
-        #     data['Y_kwlist'] = [ { self.vp_node[var].name: value for var, value in zip(self.variables, y) } for y in data['Y'] ]
-
         self.params = 'random'
 
         def fun(params, data):
             cost = self.nll(data = data, params = params).sum() 
-            reg = 1. * la.norm(params, ord=1)
-            logger.debug('Objective Function: %s ( %s + %s )', cost+reg, cost, reg)
-            return cost + reg
+            reg = 10. * la.norm(params, ord=1)
+            f = cost+reg
+
+            logger.debug('Objective Function: %s ( %s + %s )', f, cost, reg)
+            return f
 
         def jac(params, data):
             dcost = self.dnll(data = data, params = params).sum(axis=0)
-            dreg = 1. * np.sign(params)
-            logger.debug('Objective Jacobian: %s ( %s + %s )', dcost+dreg, dcost, dreg)
-            return dcost + dreg
+            dreg = 10. * np.sign(params)
+            j = dcost+dreg
 
-        i = [0]
+            logger.debug('Objective Jacobian: %s ( %s + %s )', j, dcost, dreg)
+            return j
+
+        err_grad = []
         def callback(params):
             logger.info('opt.minimize.params: %s', str(params))
-            # if i[0] == 100:
-            #     sys.exit(-1)
-            # i[0] += 1
+            err_grad.append(opt.check_grad(fun, jac, params, data))
 
         logger.info('BEGIN Optimization')
         res = opt.minimize(
@@ -403,11 +379,14 @@ class FactorGraph(object):
             # method='nelder-mead',
             jac  = jac,
             args = (data,),
-            # callback = callback
+            callback = callback if self.check_gradient else None
         )
         logger.info('END Optimization')
         logger.info('Training result: %s', res)
         # if not res.success:
         #     raise Exception('Failed to train!')
         self.params = res.x
+
+        if err_grad:
+            return np.array(err_grad)
 

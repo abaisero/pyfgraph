@@ -14,10 +14,6 @@ class Feats(object):
             self.nfeats = Feats.nfeats
         self.feats = feats[self.fslice]
 
-    @classmethod
-    def extend(self, data):
-        pass
-
 class Params(object):
     nparams = 0
 

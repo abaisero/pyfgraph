@@ -3,15 +3,21 @@ from pyfgraph.nodes import Variable, TabFactor
 from pyfgraph.algo import message_passing
 import logging
 
-def simple_tabgraph():
-    fg = FactorGraph()
+def simple_variables(fg):
+    V1 = fg.add(Variable, 'V1', domain=2)
+    V2 = fg.add(Variable, 'V2', domain=2)
+    V3 = fg.add(Variable, 'V3', domain=2)
+    return V1, V2, V3
 
-    # V1 = fg.add(Variable, 'V1', domain=2)
-    # V2 = fg.add(Variable, 'V2', domain=2)
-    # V3 = fg.add(Variable, 'V3', domain=2)
+def domain_variables(fg):
     V1 = fg.add(Variable, 'V1', domain=['This', 'Shitty'])
     V2 = fg.add(Variable, 'V2', domain=['Code', 'Breaks'])
     V3 = fg.add(Variable, 'V3', domain=['All The', 'Rules'])
+    return V1, V2, V3
+
+def make_tabgraph(vfun):
+    fg = FactorGraph()
+    V1, V2, V3 = vfun(fg)
 
     F1 = fg.add(TabFactor, 'F1', V1          )
     F2 = fg.add(TabFactor, 'F2', (V1, V2)    )
@@ -31,10 +37,16 @@ def simple_tabgraph():
     fg.make()
     return fg
 
+def simple_tabgraph():
+    return make_tabgraph(vfun=simple_variables)
+
+def domain_tabgraph():
+    return make_tabgraph(vfun=domain_variables)
+
 if __name__ == '__main__':
     fmt = '%(levelname)s @%(lineno)d:%(filename)s - %(funcName)s(): %(message)s'
     fmt = '%(asctime)s %(levelname)s @%(lineno)d:%(filename)s - %(funcName)s(): %(message)s'
-    logging.basicConfig(filename='log.featgraph.log',
+    logging.basicConfig(filename='log.tabgraph.log',
                         filemode='w',
                         format=fmt,
                         level=logging.DEBUG)

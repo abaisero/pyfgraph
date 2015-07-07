@@ -9,13 +9,20 @@ import pyfgraph.algo as algo
 class TabGraphTestCase(unittest.TestCase):
     def setUp(self):
         logger.setup_file_logger('log.test_tabgraph.log')
-        self.fg = tabgraph.simple_tabgraph()
 
-    def test_viterbi(self):
+    def test_simple_viterbi(self):
         e = 1e-5
-        algo.message_passing(self.fg, 'sum-product', 'max-product')
-        self.assertTrue(1000. - e < self.fg.max() < 1000. + e)
-        self.assertEqual(self.fg.argmax(), [0, 0, 1])
+        fg = tabgraph.simple_tabgraph()
+        algo.message_passing(fg, 'sum-product', 'max-product')
+        self.assertTrue(1000. - e < fg.max() < 1000. + e)
+        self.assertEqual(fg.argmax(), [0, 0, 1])
+
+    def test_domain_viterbi(self):
+        e = 1e-5
+        fg = tabgraph.domain_tabgraph()
+        algo.message_passing(fg, 'sum-product', 'max-product')
+        self.assertTrue(1000. - e < fg.max() < 1000. + e)
+        self.assertEqual(fg.argmax(), ['This', 'Code', 'Rules'])
 
 if __name__ == '__main__':
     unittest.main()

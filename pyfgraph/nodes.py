@@ -31,11 +31,11 @@ class Variable(Node):
         self.v2iv = dict(zip(self.domain, self.idomain))
         self.iv2v = dict(zip(self.idomain, self.domain))
 
-        logger.info('Variable %s', self.name)
-        logger.info(' - domain: %s', self.domain)
-        logger.info(' - idomain: %s', self.idomain)
-        logger.info(' - v2iv: %s', self.v2iv)
-        logger.info(' - iv2v: %s', self.iv2v)
+        # logger.info('Variable %s', self.name)
+        # logger.info(' - domain: %s', self.domain)
+        # logger.info(' - idomain: %s', self.idomain)
+        # logger.info(' - v2iv: %s', self.v2iv)
+        # logger.info(' - iv2v: %s', self.iv2v)
 
         self._value = None
         self._ivalue = None
@@ -75,8 +75,8 @@ class Factor(Node):
         self.params = params
 
         self.arity = tuple( v.arity for v in self.variables )
-        self.table = None
-        self.nl_table = None
+        # self.table = None
+        self.log_table = None
 
     @property
     def nvariables(self):
@@ -91,14 +91,12 @@ class Factor(Node):
     #     value = self.table[idx]
     #     return value
 
-    def nl_value(self, idx = None):
-        if self.nl_table is None:
+    def log_value(self, idx = None):
+        if self.log_table is None:
             raise Exception
         if idx is None:
             idx = tuple( v.ivalue for v in self.variables )
-
-        nl_value = self.nl_table[idx]
-        return nl_value
+        return self.log_table[idx]
 
     def set(self, *args, **kwargs):
         logger.error('Factor.set() is an interface and is not implemented yet.')
@@ -113,7 +111,7 @@ class Factor(Node):
         raise NotImplementedError
 
     def gradient(self):
-        logger.error('Factor.gradent() is an interface and is not implemented yet.')
+        logger.error('Factor.gradient() is an interface and is not implemented yet.')
         raise NotImplementedError
 
 class TabFactor(Factor):
@@ -137,7 +135,7 @@ class TabFactor(Factor):
             self._table = value
         else:
             NotImplementedError('{}.table.setter() failed with type(table) = {}'.format(self.name, type(value)))
-        self.nl_table = np.log(self.table)
+        self.log_table = np.log(self.table)
 
     def make(self):
         pass
@@ -163,9 +161,8 @@ class FeatFactor(Factor):
 
     def make_table(self):
 # set/make table
-        self.nl_table = np.dot(self.params_tab, self.feats.feats)
-        self.table = np.exp(-np.clip(self.nl_table, -700, 700))
-        # self.table = np.exp(-self.nl_table)
+        self.log_table = np.dot(self.params_tab, self.feats.feats)
+        # self.table = np.exp(self.log_table)
 
     def gradient(self):
         idx = tuple( v.ivalue for v in self.variables )
@@ -181,8 +178,8 @@ class FeatFactor(Factor):
         # logger.debug(' * second: %s', np.kron(pr, self.feats.feats))
 
         g = np.zeros(Params.nparams)
-        # g[self.pslice] = (np.kron(ttable, self.feats) - np.kron(pr, self.feats)).ravel()
-        g[self.params.pslice] = np.kron(ttable-pr, self.feats.feats).ravel()
+        # g[self.params.pslice] = np.kron(ttable-pr, self.feats.feats).ravel()
+        g[self.params.pslice] = np.kron(pr-ttable, self.feats.feats).ravel()
         return g
 
 class FunFactor(Factor):
@@ -220,23 +217,22 @@ class FunFactor(Factor):
 # update with variable values
         vdict = self.graph.vdict(self.variables)
         self.funfeats = np.array([
-            self.fun(  _values = np.array(prodict.values()),
+            self.fun( _values = np.array(prodict.values()),
                         **dict(kwargs, **prodict)) for prodict in proditer(**vdict)
         ])
         self.funfeats.shape = self.arity + (-1,)
 
 # make/set table
-        logger.debug('%s.make_table() - self.funfeats: %s', self.name, str(self.funfeats))
-        self.nl_table = np.dot(self.funfeats, self.params.params)
-        logger.debug('%s.make_table() - nl_table: %s', self.name, str(self.nl_table))
-        self.table = np.exp(-np.clip(self.nl_table, -700, 700))
-        # self.table = np.exp(-self.nl_table)
+        # logger.debug('%s.make_table() - self.funfeats: %s', self.name, str(self.funfeats))
+        self.log_table = np.dot(self.funfeats, self.params.params)
+        # self.table = np.exp(self.log_table)
         
     def gradient(self):
         idx = tuple( v.ivalue for v in self.variables)
         pr = self.graph.pr(self.vertex)
 
         g = np.zeros(Params.nparams)
-        g[self.params.pslice] = self.funfeats[idx] - np.tensordot(pr, self.funfeats, self.nvariables)
+        # g[self.params.pslice] = self.funfeats[idx] - np.tensordot(pr, self.funfeats, self.nvariables)
+        g[self.params.pslice] = np.tensordot(pr, self.funfeats, self.nvariables) - self.funfeats[idx] 
         return g
 
