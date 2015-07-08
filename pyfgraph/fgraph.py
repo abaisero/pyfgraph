@@ -373,7 +373,8 @@ class FactorGraph(object):
             x0   = self.params,
             jac  = jac,
             args = (data,),
-            callback = callback if self.check_gradient else None
+            callback = callback if self.check_gradient else None,
+            options = {'gtol': 5, 'norm': np.inf},
         )
         logger.info('END Optimization')
         logger.info('Training result: %s', res)

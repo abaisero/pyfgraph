@@ -1,6 +1,9 @@
 import numpy as np
 import numpy.random as rnd
 
+from collections import namedtuple
+from itertools import chain
+
 from parametric import Params
 from utils.decorators import kwargsdec
 from utils.iterators import proditer
@@ -204,7 +207,8 @@ class FunFactor(Factor):
     @fun.setter
     def fun(self, value):
         if callable(value):
-            self._fun = kwargsdec(value)
+            self._fun = value
+            # self._fun = kwargsdec(value)
         else:
             raise Exception('{}.fun.setter() requires a callable as argument.'.format(self.name))
 
@@ -216,11 +220,27 @@ class FunFactor(Factor):
         kwargs = { feat.name: feat.feats for feat in self.graph.features }
 # update with variable values
         vdict = self.graph.vdict(self.variables)
+        feat_names = [ feat.name for feat in self.graph.features ]
+        # print self.variables
+        # print [ self.graph.vp_name[v] for v in self.variables ]
+        # var_names = [ self.graph.vp_node[v].name for v in self.variables ]
+        var_names = vdict.keys()
+        # print var_names
+        all_names = chain(feat_names, var_names, ['values'])
+
+# feat_names
+# variables
+# values
+        State = namedtuple('State', ', '.join(all_names))
         self.funfeats = np.array([
-            self.fun( _values = np.array(prodict.values()),
-                        **dict(kwargs, **prodict)) for prodict in proditer(**vdict)
+            self.fun(State(
+                values = np.array(prodict.values()),
+                **dict(kwargs, **prodict)
+            )) for prodict in proditer(**vdict)
         ])
         self.funfeats.shape = self.arity + (-1,)
+# TODO compute funfeats ONLY ONCE why are you doing it at every iteration!!!
+# TODO then you only have to re-compute the log_table another time
 
 # make/set table
         # logger.debug('%s.make_table() - self.funfeats: %s', self.name, str(self.funfeats))
