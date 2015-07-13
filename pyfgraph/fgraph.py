@@ -27,16 +27,7 @@ logger = logging.getLogger(__name__)
 class FactorGraph(object):
     def __init__(self):
         self.graph = Graph(directed=False)
-        self.variables = []
-        self.factors = []
-        self.features = []
-        self.parameters = []
-        self.logZ = None
-
-        self._feats = None
-        self._params = None
-
-        self.check_gradient = False
+        self.reset()
 
 # properties
         self.vp_type = self.graph.new_vertex_property("string")
@@ -55,6 +46,31 @@ class FactorGraph(object):
 
         self.ep_mp_log_msg_fv = self.graph.new_edge_property("object")
         self.ep_mp_log_msg_vf = self.graph.new_edge_property("object")
+
+    def reset(self):
+        self._feats = None
+        self._params = None
+        self._made = False
+        self._trained = False
+
+        self.variables = []
+        self.factors = []
+        self.features = []
+        self.parameters = []
+        self.logZ = None
+
+        self.check_gradient = False
+
+        Feats.reset()
+        Params.reset()
+
+    @property
+    def made(self):
+        return self._made
+
+    @property
+    def trained(self):
+        return self._trained
 
     @property
     def nvariables(self):
@@ -145,25 +161,8 @@ class FactorGraph(object):
         for f in self.factors:
             self.vp_node[f].make()
 
-    # def make(self, feats=False, params=False, graph=False):
-    #     if feats:
-    #         self.feats = np.empty(Feats.nfeats)
-    #         for f in self.features:
-    #             f.make(self.feats)
-    #             logger.info('Feat %s: %s (nfeats: %s)', f.name, f.fslice, f.nfeats)
-    #     if params:
-    #         self.params = np.empty(Params.nparams)
-    #         for p in self.parameters:
-    #             p.make(self.params)
-    #             logger.info('Param %s: %s (nparams: %s)', p.name, p.pslice, p.nparams)
-    #     if graph:
-    #         # self.feats = np.empty(Feats.nfeats)
-    #         # self.params = np.empty(Params.nparams)
+        self._made = True
 
-# # probably not necessary anymore
-    #         for f in self.factors:
-    #             self.vp_node[f].make()
-    
     def plot(self):
         graph_draw(
             self.graph,
@@ -173,27 +172,6 @@ class FactorGraph(object):
             vertex_fill_color=self.vp_color,
             vertex_size=self.vp_size
         )
-
-    # def check_message_passing(self):
-    #     print 'Checking the message passing. For each variable, all the rows should be the same.'
-    #     for v in self.variables:
-    #         print 'Variable', self.vp_name[v]
-    #         print np.sum([ self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e]) for e in v.out_edges() ], axis = 0)
-    #         for e in v.out_edges():
-    #             msg_vf = self.ep_sp_msg_vf_lnc[e] + np.log(self.ep_sp_msg_vf[e])
-    #             msg_fv = self.ep_sp_msg_fv_lnc[e] + np.log(self.ep_sp_msg_fv[e])
-    #             print msg_vf + msg_fv
-
-    # def write(self):
-    #     print 'Vertices:'
-    #     for v in self.graph.vertices():
-    #         print 'vertex {}'.format(v)
-    #         print ' * type: {}'.format(self.vp_type[v])
-    #         print ' * in_degree: {}'.format(v.in_degree())
-    #         print ' * out_degree: {}'.format(v.out_degree())
-    #         print ' * table.shape: {}'.format(None if self.vp_table[v] is None else self.vp_table[v].shape)
-    #         print ' * table_inputs: {}'.format(self.vp_table_inputs[v])
-    #         print ' * arity: {}'.format(self.vp_arity[v])
 
     def log_pr(self, vertex):
         """ log likelihood, without the normalization constant """
@@ -236,6 +214,8 @@ class FactorGraph(object):
     
     @feats.setter
     def feats(self, value):
+        if value is None:
+            return
         if isinstance(value, np.ndarray):
             if value.size != Feats.nfeats:
                 raise Exception('The specified FactorGraph requires {} feats, but you provided {}'.format(Feats.nfeats, value.size))
@@ -298,9 +278,7 @@ class FactorGraph(object):
             self.params = params
 
         X, Y = data['X'], data['Y']
-
-        ndata = X.shape[0]
-
+        ndata = Y.shape[0]
         nll = np.empty(ndata)
         for i, x, y in itt.izip(itt.count(), X, Y):
             self.feats = x
@@ -326,7 +304,7 @@ class FactorGraph(object):
 
         X, Y = data['X'], data['Y']
         
-        ndata = X.shape[0]
+        ndata = Y.shape[0]
 
         dnll = np.empty((ndata, self.nparams))
         for i, x, y in itt.izip(itt.count(), X, Y):
@@ -374,13 +352,15 @@ class FactorGraph(object):
             jac  = jac,
             args = (data,),
             callback = callback if self.check_gradient else None,
-            options = {'gtol': 5, 'norm': np.inf},
+            options = {'gtol': 2, 'norm': np.inf},
         )
         logger.info('END Optimization')
         logger.info('Training result: %s', res)
         # if not res.success:
         #     raise Exception('Failed to train!')
         self.params = res.x
+
+        self._trained = True
 
         return np.array(err_grad) if err_grad else None
 

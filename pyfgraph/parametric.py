@@ -14,6 +14,29 @@ class Feats(object):
             self.nfeats = Feats.nfeats
         self.feats = feats[self.fslice]
 
+    @classmethod
+    def reset(cls):
+        cls.nfeats = 0
+
+class FunFeats(object):
+    def __init__(self, name, nfeats):
+        super(FunFeats, self).__init__(name)
+
+    def make(self, feats):
+        pass
+
+    @property
+    def fun(self):
+        pass
+
+    @fun.setter
+    def fun(self, value):
+        if callable(value):
+            self._fun = value
+        else:
+            raise Exception('{}.fun.setter() requires a callable as argument.'.format(self.name))
+
+
 class Params(object):
     nparams = 0
 
@@ -29,4 +52,8 @@ class Params(object):
         if self.nparams is None:
             self.nparams = Params.nparams
         self.params = params[self.pslice]
+
+    @classmethod
+    def reset(cls):
+        cls.nparams = 0
 

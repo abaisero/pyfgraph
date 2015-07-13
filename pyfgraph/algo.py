@@ -22,10 +22,10 @@ def message_passing(fgraph, *args):
     edges = []
     while boundary:
         node = boundary.pop()
-        for neigh in node.out_neighbours():
-            if neigh not in seen:
-                edges.append(fgraph.graph.edge(node, neigh))
-                boundary.append(neigh)
+        for e in node.out_edges():
+            if e.target() not in seen:
+                edges.append(e)
+                boundary.append(e.target())
         seen.append(node)
     del boundary, seen
 
@@ -60,7 +60,7 @@ def message_passing(fgraph, *args):
     for e in edges:
         _pass_msg(fgraph, e, e.source(), e.target(), which)
 
-    log.log_messages(fgraph, which)
+    # log.log_messages(fgraph, which)
 
     if 'sum-product' in which:
         fgraph.logZ = logsumexp(fgraph.log_pr(fgraph.variables[0]))
@@ -69,8 +69,8 @@ def message_passing(fgraph, *args):
 def _pass_msg(fgraph, e, s, t, which):
     # log.log_messages(fgraph, which)
 
-    snode = fgraph.vp_node[s]
-    tnode = fgraph.vp_node[t]
+    # snode = fgraph.vp_node[s]
+    # tnode = fgraph.vp_node[t]
     # logger.debug('passing %s -> %s', snode, tnode)
 
     s_vtype = fgraph.vp_type[s]
@@ -80,15 +80,14 @@ def _pass_msg(fgraph, e, s, t, which):
         mp_out_log_msg = np.zeros(arity)
 
         # logger.debug('   === V -> F === ')
-        for neigh in filter(lambda neigh: neigh != t, s.out_neighbours()):
-            neigh_edge = fgraph.graph.edge(neigh, s)
+        for ne in filter(lambda e: e.target() != t, s.out_edges()):
             if 'sum-product' in which:
-                sp_in_log_msg = fgraph.ep_sp_log_msg_fv[neigh_edge]
+                sp_in_log_msg = fgraph.ep_sp_log_msg_fv[ne]
                 # logger.debug(' * sp_in_log_msg: %s', sp_in_log_msg)
                 sp_out_log_msg += sp_in_log_msg
 
             if 'max-product' in which:
-                mp_in_log_msg = fgraph.ep_mp_log_msg_fv[neigh_edge]
+                mp_in_log_msg = fgraph.ep_mp_log_msg_fv[ne]
                 # logger.debug(' * mp_in_log_msg: %s', mp_in_log_msg)
                 mp_out_log_msg += mp_in_log_msg
 
@@ -107,15 +106,14 @@ def _pass_msg(fgraph, e, s, t, which):
             msgs['max-product'] = { nname: np.zeros(fgraph.vp_arity[t]) }
 
         # logger.debug('   === F -> V === ')
-        for neigh in filter(lambda neigh: neigh != t, s.out_neighbours()):
-            nname = fgraph.vp_name[neigh]
-            neigh_edge = fgraph.graph.edge(neigh, s)
+        for ne in filter(lambda e: e.target() != t, s.out_edges()):
+            nname = fgraph.vp_name[ne.target()]
             if 'sum-product' in which:
-                sp_in_log_msg = fgraph.ep_sp_log_msg_vf[neigh_edge]
+                sp_in_log_msg = fgraph.ep_sp_log_msg_vf[ne]
                 # logger.debug(' * sp_in_log_msg:     %s', sp_in_log_msg)
                 msgs['sum-product'][nname] = sp_in_log_msg
             if 'max-product' in which:
-                mp_in_log_msg = fgraph.ep_mp_log_msg_vf[neigh_edge]
+                mp_in_log_msg = fgraph.ep_mp_log_msg_vf[ne]
                 # logger.debug(' * mp_in_log_msg:     %s', mp_in_log_msg)
                 msgs['max-product'][nname] = mp_in_log_msg
 

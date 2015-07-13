@@ -1,0 +1,5 @@
+Types of Factors:
+ * TabFactor: pre-specified table.  No learning.
+ * TabPFactor: Table parametric factor.  Each element in the table is a parameter.  No features.  Equivalent to constant features.
+ * FeatPFactor: Simple log-linear factor.  Same features in all cases; different parameters.
+ * FunPFactor: 

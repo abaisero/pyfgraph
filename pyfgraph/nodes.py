@@ -78,7 +78,6 @@ class Factor(Node):
         self.params = params
 
         self.arity = tuple( v.arity for v in self.variables )
-        # self.table = None
         self.log_table = None
 
     @property
@@ -149,6 +148,26 @@ class TabFactor(Factor):
     def gradient(self):
         return np.zeros(Params.nparams)
 
+class TabPFactor(Factor):
+    def __init__(self, graph, vertex, name, variables):
+        super(TabPFactor, self).__init__(graph, vertex, name, variables)
+        if self.params is None:
+            self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=np.prod(self.arity))
+
+    def make(self):
+        self.params_tab = self.params.params.view()
+        self.params_tab.shape = self.arity + (-1,)
+
+    def make_table(self):
+        self.log_table = self.params_tab
+
+    def gradient(self):
+        idx = tuple( v.ivalue for v in self.variables )
+        idx_r = np.ravel_multi_index(idx, self.arity)
+        g = np.zeros(Params.nparams)
+        g[self.params.pslice][idx_r] = 1
+        return g
+
 class FeatFactor(Factor):
     def __init__(self, graph, vertex, name, variables, feats = None, params = None):
         super(FeatFactor, self).__init__(graph, vertex, name, variables, feats, params)
@@ -195,10 +214,8 @@ class FunFactor(Factor):
             raise Exception('FunFactor.__init__() receives incompatible `feats` and `nfunfeats` parameters')
 
         self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=nfunfeats or self.feats.nfeats)
-        # if nfunfeats is None:
-        #     nfunfeats = self.feats.nfeats
-        # self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=nfunfeats)
         self._fun = None
+        self._funfeats = None
 
     @property
     def fun(self):
@@ -208,7 +225,6 @@ class FunFactor(Factor):
     def fun(self, value):
         if callable(value):
             self._fun = value
-            # self._fun = kwargsdec(value)
         else:
             raise Exception('{}.fun.setter() requires a callable as argument.'.format(self.name))
 
@@ -216,32 +232,35 @@ class FunFactor(Factor):
         pass
 
     def make_table(self):
+        if self._funfeats is None:
+            self._funfeats = {}
+        self.graph.feats.flags.writeable = False
+        h = hash(self.graph.feats.data)
+        self.graph.feats.flags.writeable = True
+
+        if h not in self._funfeats:
 # make/set features
-        kwargs = { feat.name: feat.feats for feat in self.graph.features }
+            kwargs = { feat.name: feat.feats for feat in self.graph.features }
 # update with variable values
-        vdict = self.graph.vdict(self.variables)
-        feat_names = [ feat.name for feat in self.graph.features ]
-        # print self.variables
-        # print [ self.graph.vp_name[v] for v in self.variables ]
-        # var_names = [ self.graph.vp_node[v].name for v in self.variables ]
-        var_names = vdict.keys()
-        # print var_names
-        all_names = chain(feat_names, var_names, ['values'])
+            vdict = self.graph.vdict(self.variables)
+            all_names = chain(
+                [ feat.name for feat in self.graph.features ],  # feature names
+                vdict.keys(),                                   # variable names
+                ['values'],                                     # 'values' string
+            )
 
-# feat_names
-# variables
-# values
-        State = namedtuple('State', ', '.join(all_names))
-        self.funfeats = np.array([
-            self.fun(State(
-                values = np.array(prodict.values()),
-                **dict(kwargs, **prodict)
-            )) for prodict in proditer(**vdict)
-        ])
-        self.funfeats.shape = self.arity + (-1,)
-# TODO compute funfeats ONLY ONCE why are you doing it at every iteration!!!
-# TODO then you only have to re-compute the log_table another time
+            State = namedtuple('State', ', '.join(all_names))
+            ff = np.array([
+                self.fun(State(
+                    values = np.array(prodict.values()),
+                    **dict(kwargs, **prodict)
+                )) for prodict in proditer(**vdict)
+            ])
+            ff.shape = self.arity + (-1,)
+            self._funfeats[h] = ff
 
+        self.funfeats = self._funfeats[h]
+        
 # make/set table
         # logger.debug('%s.make_table() - self.funfeats: %s', self.name, str(self.funfeats))
         self.log_table = np.dot(self.funfeats, self.params.params)
