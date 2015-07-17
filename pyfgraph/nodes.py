@@ -8,9 +8,10 @@ from parametric import Params
 from utils.decorators import kwargsdec
 from utils.iterators import proditer
 
+from math import log
 from operator import mul
 
-import logging
+import logging, sys
 logger = logging.getLogger(__name__)
 
 class Node(object):
@@ -74,11 +75,15 @@ class Factor(Node):
     def __init__(self, graph, vertex, name, variables, feats=None, params=None):
         super(Factor, self).__init__(graph, vertex, name)
         self.variables = variables if isinstance(variables, tuple) else (variables,)
+        self.arity = tuple( v.arity for v in self.variables )
         self.feats = feats
         self.params = params
 
-        self.arity = tuple( v.arity for v in self.variables )
-        self.log_table = None
+        self._log_table = None
+
+    @property
+    def log_table(self):
+        return self._log_table
 
     @property
     def nvariables(self):
@@ -93,11 +98,10 @@ class Factor(Node):
     #     value = self.table[idx]
     #     return value
 
-    def log_value(self, idx = None):
+    def log_value(self, data):
         if self.log_table is None:
             raise Exception
-        if idx is None:
-            idx = tuple( v.ivalue for v in self.variables )
+        idx = tuple( v.v2iv[getattr(data.values, v.name)] for v in self.variables )
         return self.log_table[idx]
 
     def set(self, *args, **kwargs):
@@ -119,33 +123,45 @@ class Factor(Node):
 class TabFactor(Factor):
     def __init__(self, graph, vertex, name, variables):
         super(TabFactor, self).__init__(graph, vertex, name, variables)
-        self._table = None
 
     @property
     def table(self):
-        return self._table
+        return np.exp(self._log_table)
 
     @table.setter
     def table(self, value):
+# TODO check that the values are non-negative
         if isinstance(value, (int, long, float)):
-            if self._table is None:
-                self._table = np.empty(self.arity)
-            self._table.fill(value)
+            if self._log_table is None:
+                self._log_table = np.empty(self.arity)
+            self._log_table.fill(log(value))
         elif isinstance(value, list):
-            self._table = np.array(value)
+            self._log_table = np.log(value)
         elif isinstance(value, np.ndarray):
-            self._table = value
+            self._log_table = np.log(value)
         else:
-            NotImplementedError('{}.table.setter() failed with type(table) = {}'.format(self.name, type(value)))
-        self.log_table = np.log(self.table)
+            NotImplementedError('{}.table.setter() failed with type(value) = {}'.format(self.name, type(value)))
+
+    @Factor.log_table.setter
+    def log_table(self, value):
+        if isinstance(value, (int, long, float)):
+            if self._log_table is None:
+                self._log_table = np.empty(self.arity)
+            self._log_table.fill(value)
+        elif isinstance(value, list):
+            self._log_table = np.array(value)
+        elif isinstance(value, np.ndarray):
+            self._log_table = value
+        else:
+            NotImplementedError('{}.log_table.setter() failed with type(value) = {}'.format(self.name, type(value)))
 
     def make(self):
         pass
 
-    def make_table(self):
+    def make_table(self, feats):
         pass
 
-    def gradient(self):
+    def gradient(self, data):
         return np.zeros(Params.nparams)
 
 class TabPFactor(Factor):
@@ -168,40 +184,112 @@ class TabPFactor(Factor):
         g[self.params.pslice][idx_r] = 1
         return g
 
+class SimpleFeatFactor(Factor):
+    def __init__(self, graph, vertex, name, variables, feats, params = None):
+        super(SimpleFeatFactor, self).__init__(graph, vertex, name, variables, feats, params)
+        if self.params is None:
+            self.params = self.graph.add(Params, '{}.param'.format(name), nparams=self.feats.nfeats)
+
+    def make(self):
+        pass
+
+    def make_table(self, data):
+        feats = getattr(data.feats, self.feats.name)
+        self.log_table = np.dot(feats, self.params.params)
+
+    def log_value(self, data):
+        feats = getattr(data.feats, self.feats.name)
+        idx = tuple( v.v2iv[getattr(data.values, v.name)] for v in self.variables )
+        return np.dot(feats[idx], self.params.params)
+
+    def gradient(self, data):
+        feats = getattr(data.feats, self.feats.name)
+        idx = tuple( v.v2iv[getattr(data.values, v.name)] for v in self.variables )
+
+        # logger.debug('%s.gradient():', self.name)
+        # logger.debug(' * totparams: %s', Params.nparams)
+        # logger.debug(' * pslice: %s', self.params.pslice)
+        # logger.debug(' * feats.shape: %s', feats.shape)
+        # logger.debug(' * idx: %s', idx)
+
+        g = np.zeros(Params.nparams)
+        g[self.params.pslice] = feats[idx]
+        return g
+
+        # pr = self.graph.pr(self.vertex)
+
+        # ttable = np.zeros(self.arity)
+        # ttable[idx] = 1
+
+        # # logger.debug('%s.gradient():', self.name)
+        # # logger.debug(' * ttable: %s', ttable)
+        # # logger.debug(' * pr:     %s', pr)
+        # # logger.debug(' * first:  %s', np.kron(ttable, self.feats.feats))
+        # # logger.debug(' * second: %s', np.kron(pr, self.feats.feats))
+
+        # g = np.zeros(Params.nparams)
+        # # g[self.params.pslice] = np.kron(ttable-pr, self.feats.feats).ravel()
+        # g[self.params.pslice] = np.kron(pr-ttable, self.feats.feats).ravel()
+        # return g
+
+
 class FeatFactor(Factor):
-    def __init__(self, graph, vertex, name, variables, feats = None, params = None):
+    def __init__(self, graph, vertex, name, variables, feats, params = None):
         super(FeatFactor, self).__init__(graph, vertex, name, variables, feats, params)
         if self.params is None:
-            self.params = self.graph.add(Params, '_{}.param'.format(name), nparams=reduce(mul, self.arity)*self.feats.nfeats)
-
-# TODO if no params is given, create a new parameter which matchec this type of Factor
-        # self.nparams = reduce(mul, self.arity) * self.feats.nfeats
+            self.params = self.graph.add(Params, '{}.param'.format(name), nparams=np.prod(self.arity)*self.feats.nfeats)
+            # self.params = self.graph.add(Params, '{}.param'.format(name), nparams=self.feats.nfeats)
 
     def make(self):
         self.params_tab = self.params.params.view()
         self.params_tab.shape = self.arity + (-1,)
+        pass
 
-    def make_table(self):
-# set/make table
-        self.log_table = np.dot(self.params_tab, self.feats.feats)
-        # self.table = np.exp(self.log_table)
+    def make_table(self, feats):
+        feats = getattr(feats, self.feats.name)
+        self._log_table = np.einsum('...i,...i', feats, self.params_tab)
+        # self.log_table = np.dot(feats, self.params.params)
 
-    def gradient(self):
-        idx = tuple( v.ivalue for v in self.variables )
+    def log_value(self, data):
+        # feats = getattr(data.feats, self.feats.name)
+        idx = tuple( v.v2iv[getattr(data.values, v.name)] for v in self.variables )
+        # return np.dot(feats[idx], self.params.params)
+        return self.log_table[idx]
+
+    def Efeats(self, data):
+        feats = getattr(data.feats, self.feats.name)
         pr = self.graph.pr(self.vertex)
 
+        g = np.zeros(Params.nparams)
+        g[self.params.pslice] = np.einsum('...,...i', pr, feats).ravel()
+        return g
+
+    def gradient(self, data):
+        feats = getattr(data.feats, self.feats.name)
+        idx = tuple( v.v2iv[getattr(data.values, v.name)] for v in self.variables )
+        # print feats
+        # print idx
+        # print self.params.pslice
+        # idx_r = np.ravel_multi_index(idx, self.arity)
+        # print idx_r
+
+        # # logger.debug('%s.gradient():', self.name)
+        # # logger.debug(' * totparams: %s', Params.nparams)
+        # # logger.debug(' * pslice: %s', self.params.pslice)
+        # # logger.debug(' * feats.shape: %s', feats.shape)
+        # # logger.debug(' * idx: %s', idx)
+
+        # g = np.zeros(Params.nparams)
+        # g[self.params.pslice] = feats[idx]
+        # return g
+
+        pr = self.graph.pr(self.vertex)
         ttable = np.zeros(self.arity)
         ttable[idx] = 1
 
-        # logger.debug('%s.gradient():', self.name)
-        # logger.debug(' * ttable: %s', ttable)
-        # logger.debug(' * pr:     %s', pr)
-        # logger.debug(' * first:  %s', np.kron(ttable, self.feats.feats))
-        # logger.debug(' * second: %s', np.kron(pr, self.feats.feats))
-
         g = np.zeros(Params.nparams)
-        # g[self.params.pslice] = np.kron(ttable-pr, self.feats.feats).ravel()
-        g[self.params.pslice] = np.kron(pr-ttable, self.feats.feats).ravel()
+        # g[self.params.pslice] = np.kron(pr-ttable, feats[idx]).ravel()
+        g[self.params.pslice] = np.einsum('...,...i', pr-ttable, feats).ravel()
         return g
 
 class FunFactor(Factor):
@@ -274,4 +362,3 @@ class FunFactor(Factor):
         # g[self.params.pslice] = self.funfeats[idx] - np.tensordot(pr, self.funfeats, self.nvariables)
         g[self.params.pslice] = np.tensordot(pr, self.funfeats, self.nvariables) - self.funfeats[idx] 
         return g
-

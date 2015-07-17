@@ -1,4 +1,8 @@
+import nphelper
+
+import operator
 import inspect
+from collections import namedtuple
 import sys
 
 import sys, warnings
@@ -27,7 +31,7 @@ logger = logging.getLogger(__name__)
 class FactorGraph(object):
     def __init__(self):
         self.graph = Graph(directed=False)
-        self.reset()
+        self.clean()
 
 # properties
         self.vp_type = self.graph.new_vertex_property("string")
@@ -47,8 +51,9 @@ class FactorGraph(object):
         self.ep_mp_log_msg_fv = self.graph.new_edge_property("object")
         self.ep_mp_log_msg_vf = self.graph.new_edge_property("object")
 
-    def reset(self):
-        self._feats = None
+    def clean(self):
+        # self.feats = None
+
         self._params = None
         self._made = False
         self._trained = False
@@ -61,8 +66,8 @@ class FactorGraph(object):
 
         self.check_gradient = False
 
-        Feats.reset()
-        Params.reset()
+        Feats.clean()
+        Params.clean()
 
     @property
     def made(self):
@@ -85,7 +90,11 @@ class FactorGraph(object):
         if value is None:
             for v in self.variables:
                 self.vp_node[v].value = None
+        elif isinstance(value, self.Values):
+            for v in self.variables:
+                self.vp_node[v].value = getattr(value, self.vp_node[v].name)
         elif isinstance(value, np.ndarray) or isinstance(value, list):
+            raise Exception('This should not happen anymore.')
             for var, val in zip(self.variables, value):
                 self.vp_node[var].value = val
         elif isinstance(value, dict):
@@ -148,10 +157,10 @@ class FactorGraph(object):
         return c
 
     def make(self):
-        self.feats = np.empty(Feats.nfeats)
-        for f in self.features:
-            f.make(self.feats)
-            logger.info('Feat %s: %s (nfeats: %s)', f.name, f.fslice, f.nfeats)
+        # self.feats = np.empty(Feats.nfeats)
+        # for f in self.features:
+        #     f.make(self.feats)
+        #     logger.info('Feat %s: %s (nfeats: %s)', f.name, f.fslice, f.nfeats)
 
         self.params = np.empty(Params.nparams)
         for p in self.parameters:
@@ -160,6 +169,13 @@ class FactorGraph(object):
 
         for f in self.factors:
             self.vp_node[f].make()
+
+# Data containers
+        self.Feats  = namedtuple('Feats', [ f.name for f in self.features ])
+        self.Values = namedtuple('Values', [ self.vp_node[v].name for v in self.variables ])
+        self.Values.__new__.__defaults__ = (None,) * self.nvariables
+
+        self.Data = namedtuple('Data', 'feats, values')
 
         self._made = True
 
@@ -201,30 +217,22 @@ class FactorGraph(object):
 
     def argmax(self):
         # log.log_messages(self, ('max-product',))
-        values = [None] * self.nvariables
-        for i, v in enumerate(self.variables):
+        values = {}
+        for v in self.variables:
+            vnode = self.vp_node[v]
             e = v.out_edges().next()
             ivalue = (self.ep_mp_log_msg_vf[e] + self.ep_mp_log_msg_fv[e]).argmax()
-            values[i] = self.vp_node[v].iv2v[ivalue]
-        return values
+            values[vnode.name] = vnode.iv2v[ivalue]
 
-    @property
-    def feats(self):
-        return self._feats
-    
-    @feats.setter
-    def feats(self, value):
-        if value is None:
-            return
-        if isinstance(value, np.ndarray):
-            if value.size != Feats.nfeats:
-                raise Exception('The specified FactorGraph requires {} feats, but you provided {}'.format(Feats.nfeats, value.size))
-            if value.size == self.nfeats:
-                self._feats[:] = value.ravel()
-            else:
-                self._feats = value.ravel().copy()
-        else:
-            raise NotImplementedError('feats.setter with object type {} not defined.').format(type(value))
+        return self.Values(**values)
+
+        # # log.log_messages(self, ('max-product',))
+        # values = [None] * self.nvariables
+        # for i, v in enumerate(self.variables):
+        #     e = v.out_edges().next()
+        #     ivalue = (self.ep_mp_log_msg_vf[e] + self.ep_mp_log_msg_fv[e]).argmax()
+        #     values[i] = self.vp_node[v].iv2v[ivalue]
+        # return values
 
     @property
     def nfeats(self):
@@ -253,80 +261,133 @@ class FactorGraph(object):
         if isinstance(self._params, np.ndarray):
             return self._params.size
         return None
+
+    def other_pr(self, v, data):
+        _data = data if isinstance(data, list) else [data]
+        if any((not isinstance(d, self.Data) for d in _data)):
+            raise Exception('Data type not understood')
+
+        ndata = len(_data)
+        pr = [None]*ndata
+        for i, d in enumerate(_data):
+            self.values = d.values
+            # self.feats = d.feats
+
+            for f in self.factors:
+                self.vp_node[f].make_table(d.feats)
+            algo.message_passing(self, 'sum-product')
+            pr[i] = self.pr(v.vertex)
+
+        return pr if isinstance(data, list) else pr[0]
     
     def viterbi(self, data = None, params = None):
+        _data = data if isinstance(data, list) else [data]
+        if any((not isinstance(d, self.Data) for d in _data)):
+            raise Exception('Data type not understood')
+
         if params is not None:
             self.params = params
 
-        vit = []
-        for x in data['X']:
-            self.values = None
-            self.feats = x
-            for f in self.factors:
-                self.vp_node[f].make_table()
-            algo.message_passing(self, 'max-product')
-            vit.append(self.argmax())
+# TODO copy input and add new values
+        ndata = len(_data)
+        vit = [None]*ndata
+        for i, d in enumerate(_data):
+            self.values = d.values
+            # self.feats = d.feats
 
-        return vit
+            for f in self.factors:
+                self.vp_node[f].make_table(d.feats)
+            algo.message_passing(self, 'max-product')
+            vit[i] = d._replace(values=self.argmax())
+
+        return vit if isinstance(data, list) else vit[0]
 
     def nll(self, data = None, params = None):
-        if data is None:
-# Assume data is already set, 
-            return self.logZ - np.sum( self.vp_node[f].log_value() for f in self.factors )
+        if any((not isinstance(d, self.Data) for d in data)):
+            raise Exception('Data type not understood')
+        if any((None in d.values for d in data)):
+            raise Exception('Data.values should be fully determined.')
 
         if params is not None:
             self.params = params
 
-        X, Y = data['X'], data['Y']
-        ndata = Y.shape[0]
+        ndata = len(data)
         nll = np.empty(ndata)
-        for i, x, y in itt.izip(itt.count(), X, Y):
-            self.feats = x
-            self.values = None
-            self.values = y
+        for i, d in enumerate(data):
+            # self.feats = d.feats
+            # self.values = d.values
 
             for f in self.factors:
-                self.vp_node[f].make_table()
+                self.vp_node[f].make_table(d.feats)
             # log.log_params(self)
             # log.log_tables(self)
             algo.message_passing(self, 'sum-product')
 
-            nll[i] = self.nll()
+            nll[i] = self.logZ - np.sum( self.vp_node[f].log_value(d) for f in self.factors )
         return nll
 
     def dnll(self, data = None, params = None):
-        if data is None:
-# Assume data is already set, 
-            return np.array([ self.vp_node[f].gradient() for f in self.factors ]).sum(axis=0)
+        if any((not isinstance(d, self.Data) for d in data)):
+            raise Exception('Data type not understood')
+        if any((None in d.values for d in data)):
+            raise Exception('Data.values should be fully determined.')
 
         if params is not None:
             self.params = params
 
-        X, Y = data['X'], data['Y']
-        
-        ndata = Y.shape[0]
-
+        ndata = len(data)
         dnll = np.empty((ndata, self.nparams))
-        for i, x, y in itt.izip(itt.count(), X, Y):
-            self.feats = x
-            self.values = None
-            self.values = y
+        for i, d in enumerate(data):
+            # self.feats = d.feats
+            # self.values = d.values
 
             for f in self.factors:
-                self.vp_node[f].make_table()
+                self.vp_node[f].make_table(d.feats)
             # log.log_params(self)
             # log.log_tables(self)
             algo.message_passing(self, 'sum-product')
 
-            dnll[i] = self.dnll()
+            dnll[i] = np.sum([
+                self.vp_node[f].gradient(d) for f in self.factors
+            ], axis = 0)
         return dnll
+    
+    def ddnll(self, data = None, params = None):
+        if any((not isinstance(d, self.Data) for d in data)):
+            raise Exception('Data type not understood')
+        if any((None in d.values for d in data)):
+            raise Exception('Data.values should be fully determined.')
+
+        if params is not None:
+            self.params = params
+
+        ndata = len(data)
+        ddnll = np.empty((ndata, self.nparams, self.nparams))
+        for i, d in enumerate(data):
+            # self.feats = d.feats
+            # self.values = d.values
+
+            for f in self.factors:
+                self.vp_node[f].make_table(d.feats)
+            # log.log_params(self)
+            # log.log_tables(self)
+            algo.message_passing(self, 'sum-product')
+
+            Efeats = [ list(self.vp_node[f].Efeats(d)) for f in self.factors ]
+            ddnll[i] = np.sum([
+                np.outer(ef1, ef2) for ef2 in Efeats for ef1 in Efeats
+            ], axis=0)
+
+        return ddnll
+    
 
     def train(self, data):
         self.params = 'random'
 
+        l = 1.
         def fun(params, data):
             cost = self.nll(data = data, params = params).sum() 
-            reg = 1. * la.norm(params, ord=1)
+            reg = l * la.norm(params, ord=1)
             f = cost+reg
 
             logger.debug('Objective Function: %s ( %s + %s )', f, cost, reg)
@@ -334,25 +395,44 @@ class FactorGraph(object):
 
         def jac(params, data):
             dcost = self.dnll(data = data, params = params).sum(axis=0)
-            dreg = 1. * np.sign(params)
+            dreg = l * np.sign(params)
             j = dcost+dreg
 
             logger.debug('Objective Jacobian: %s ( %s + %s )', j, dcost, dreg)
             return j
+        
+        def hess(params, data):
+            h = self.ddnll(data = data, params = params).sum(axis=0)
+
+            logger.debug('Objective Hessian: %s', h)
+            return h
 
         err_grad = []
         def callback(params):
             logger.info('opt.minimize.params: %s', str(params))
-            err_grad.append(opt.check_grad(fun, jac, params, data))
+            err = opt.check_grad(fun, jac, params, data)
+            logger.debug('err_grad: %s', err)
+            err_grad.append(err)
 
         logger.info('BEGIN Optimization')
+        # xopt = opt.fmin_bfgs(
+        #     f = fun,
+        #     x0   = self.params,
+        #     fprime  = jac,
+        #     args = (data,),
+        #     callback = callback if self.check_gradient else None,
+        #     gtol = 2,
+        #     norm = np.inf
+        # )
         res = opt.minimize(
             fun  = fun,
             x0   = self.params,
             jac  = jac,
+            # hess = hess,
+            # method = 'Newton-CG',
             args = (data,),
             callback = callback if self.check_gradient else None,
-            options = {'gtol': 2, 'norm': np.inf},
+            options = {'gtol': 5, 'norm': np.inf},
         )
         logger.info('END Optimization')
         logger.info('Training result: %s', res)

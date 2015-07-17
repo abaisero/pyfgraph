@@ -69,27 +69,37 @@ def message_passing(fgraph, *args):
 def _pass_msg(fgraph, e, s, t, which):
     # log.log_messages(fgraph, which)
 
-    # snode = fgraph.vp_node[s]
-    # tnode = fgraph.vp_node[t]
-    # logger.debug('passing %s -> %s', snode, tnode)
+    snode = fgraph.vp_node[s]
+    tnode = fgraph.vp_node[t]
+    # logger.debug(' === passing %s -> %s ===', snode, tnode)
 
     s_vtype = fgraph.vp_type[s]
     if s_vtype == 'variable':
         arity = fgraph.vp_arity[s]
-        sp_out_log_msg = np.zeros(arity)
-        mp_out_log_msg = np.zeros(arity)
 
         # logger.debug('   === V -> F === ')
-        for ne in filter(lambda e: e.target() != t, s.out_edges()):
+        if snode.value is not None:
             if 'sum-product' in which:
-                sp_in_log_msg = fgraph.ep_sp_log_msg_fv[ne]
-                # logger.debug(' * sp_in_log_msg: %s', sp_in_log_msg)
-                sp_out_log_msg += sp_in_log_msg
-
+                sp_out_log_msg = np.repeat(-np.inf, arity)
+                sp_out_log_msg[snode.ivalue] = 0.
             if 'max-product' in which:
-                mp_in_log_msg = fgraph.ep_mp_log_msg_fv[ne]
-                # logger.debug(' * mp_in_log_msg: %s', mp_in_log_msg)
-                mp_out_log_msg += mp_in_log_msg
+                mp_out_log_msg = np.repeat(-np.inf, arity)
+                mp_out_log_msg[snode.ivalue] = 0.
+        else:
+            if 'sum-product' in which:
+                sp_out_log_msg = np.zeros(arity)
+            if 'max-product' in which:
+                mp_out_log_msg = np.zeros(arity)
+            for ne in filter(lambda e: e.target() != t, s.out_edges()):
+                if 'sum-product' in which:
+                    sp_in_log_msg = fgraph.ep_sp_log_msg_fv[ne]
+                    # logger.debug(' * sp_in_log_msg: %s', sp_in_log_msg)
+                    sp_out_log_msg += sp_in_log_msg
+
+                if 'max-product' in which:
+                    mp_in_log_msg = fgraph.ep_mp_log_msg_fv[ne]
+                    # logger.debug(' * mp_in_log_msg: %s', mp_in_log_msg)
+                    mp_out_log_msg += mp_in_log_msg
 
         if 'sum-product' in which:
             # logger.debug(' * sp_out_log_msg: %s', sp_out_log_msg)

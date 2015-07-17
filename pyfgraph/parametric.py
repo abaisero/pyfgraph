@@ -1,41 +1,16 @@
 class Feats(object):
     nfeats = 0
 
-    def __init__(self, name, nfeats=None):
+    def __init__(self, name, nfeats):
         self.name = name
         self.nfeats = nfeats
-        self.fslice = slice(None)
-        if nfeats is not None:
-            self.fslice = slice(Feats.nfeats, Feats.nfeats+nfeats)
-            Feats.nfeats += self.nfeats
 
     def make(self, feats):
-        if self.nfeats is None:
-            self.nfeats = Feats.nfeats
-        self.feats = feats[self.fslice]
+        pass
 
     @classmethod
-    def reset(cls):
+    def clean(cls):
         cls.nfeats = 0
-
-class FunFeats(object):
-    def __init__(self, name, nfeats):
-        super(FunFeats, self).__init__(name)
-
-    def make(self, feats):
-        pass
-
-    @property
-    def fun(self):
-        pass
-
-    @fun.setter
-    def fun(self, value):
-        if callable(value):
-            self._fun = value
-        else:
-            raise Exception('{}.fun.setter() requires a callable as argument.'.format(self.name))
-
 
 class Params(object):
     nparams = 0
@@ -54,6 +29,6 @@ class Params(object):
         self.params = params[self.pslice]
 
     @classmethod
-    def reset(cls):
+    def clean(cls):
         cls.nparams = 0
 
